@@ -52,9 +52,9 @@ const THEMES = {
     display: "'Nunito Sans', 'Segoe UI', sans-serif", body: "'Nunito Sans', 'Segoe UI', sans-serif",
   },
   C2: {
-    pageBg: "#37474F", ink: "#EAECEE", accent: "#26343B", accent2: "#D4A24C",
-    pillBg: "#ECEFF1", pillText: "#37474F", softBg: "#F4F6F7", line: "#D9E0E4",
-    badgeText: "#D4A24C", mascot: "🐉", radius: 10, itemFont: 14.5, baseFont: 14,
+    pageBg: "#94A7B0", ink: "#243139", accent: "#2C6E78", accent2: "#B26A12",
+    pillBg: "#E6EDF0", pillText: "#2A3B44", softBg: "#F1F5F7", line: "#CBD8DE",
+    badgeText: "#2C6E78", mascot: "🐉", radius: 10, itemFont: 14.5, baseFont: 14,
     gap: 13, showImages: false, vocabStyle: "list", learnTitle: "Language Note",
     display: "'Nunito Sans', 'Segoe UI', sans-serif", body: "'Nunito Sans', 'Segoe UI', sans-serif",
   },
@@ -100,7 +100,7 @@ function parseLoose(text) {
 }
 
 async function callClaudeRaw(prompt, maxTokens) {
-  const res = await fetch("/api/claude", {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -457,6 +457,156 @@ function downloadDoc(ws, cfg, theme, showAnswers) {
   const a = document.createElement("a");
   a.href = url;
   a.download = (ws.title || "worksheet").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_") + (showAnswers ? "_answers" : "") + ".doc";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ===== IN / PDF — dựng trang HTML màu độc lập, mở cửa sổ mới rồi in
+   (window.print() trực tiếp bị chặn khi artifact nằm trong iframe) ===== */
+function buildPrintHtml(ws, cfg, theme, showAnswers, logo, mascot) {
+  const learn = ws.learn || {};
+  const g = learn.grammar || {};
+  const vocabHtml = (learn.vocab || []).length
+    ? `<div style="text-align:center;margin:6px 0"><span style="background:${theme.ink};color:#fff;border-radius:20px;padding:3px 16px;font-weight:bold">${esc(theme.vocabStyle === "cards" ? "Vocabulary" : "Core Vocabulary")}</span></div>
+       <div style="text-align:center;margin-bottom:10px">${learn.vocab.map((v) => `<span style="display:inline-block;background:${theme.pillBg};color:${theme.pillText};border-radius:20px;padding:4px 12px;margin:3px;font-weight:bold">${v.img ? `<img src="${v.img}" style="height:34px;vertical-align:middle;border-radius:4px;margin-right:4px">` : ""}${esc(v.word)}${v.pos ? ` <i style="opacity:.7">(${esc(v.pos)})</i>` : ""}</span>`).join("")}</div>`
+    : "";
+  let rulesHtml = g.heading ? `<div style="font-weight:bold;color:${theme.ink};margin-bottom:6px">${richToHtmlColor(g.heading)}</div>` : "";
+  (g.rules || []).forEach((r) => {
+    rulesHtml += `<div style="margin-bottom:6px">• ${richToHtmlColor(r.point)}`;
+    (r.examples || []).forEach((e) => { rulesHtml += `<div style="margin-left:16px;font-style:italic;color:${theme.pillText}">“${richToHtmlColor(e)}”</div>`; });
+    rulesHtml += `</div>`;
+  });
+  if (g.table && (g.table.headers || []).length) {
+    rulesHtml += `<table style="border-collapse:collapse;margin-top:6px;font-size:11pt"><tr>${g.table.headers.map((h) => `<th style="border:1px solid ${theme.line};background:${theme.pillBg};color:${theme.ink};padding:4px 8px">${esc(h)}</th>`).join("")}</tr>${(g.table.rows || []).map((row) => `<tr>${row.map((c) => `<td style="border:1px solid ${theme.line};padding:4px 8px">${esc(c)}</td>`).join("")}</tr>`).join("")}</table>`;
+  }
+  const learnBlock = `<div class="sec" style="border:2px solid ${theme.line};border-radius:14px;padding:14px;margin-bottom:14px">
+    <div style="font-weight:bold;color:${theme.ink};font-size:15pt;margin-bottom:8px">${esc(theme.learnTitle)}</div>
+    ${vocabHtml}
+    <div style="background:${theme.softBg};border-radius:10px;padding:12px 14px;position:relative">${rulesHtml}${mascot ? `<img src="${mascot}" style="position:absolute;right:6px;bottom:0;height:80px">` : ""}</div>
+  </div>`;
+
+  const exBlocks = (ws.exercises || []).filter((e) => e && !e._failed)
+    .map((ex, i) => `<div class="sec" style="border:2px solid ${theme.line};border-radius:14px;padding:14px;margin-bottom:14px">${exerciseToHtmlColor(ex, i + 1, showAnswers, theme)}</div>`).join("");
+
+  const header = `<div style="background:${theme.pageBg};border-radius:14px;padding:14px 16px;margin-bottom:14px">
+    <table style="width:100%"><tr>
+      <td style="width:60px">${logo ? `<img src="${logo}" style="height:46px">` : ""}</td>
+      <td style="color:${theme.ink};font-weight:bold">Name: ______________________ &nbsp; Class: __________</td>
+      <td style="text-align:right"><span style="background:#fff;color:${theme.badgeText};border-radius:20px;padding:3px 12px;font-weight:bold">${esc(cfg.level)}</span></td>
+    </tr></table>
+    <div style="margin-top:8px"><span style="background:#fff;color:${theme.ink};border-radius:8px;padding:3px 12px;font-weight:bold;font-size:14pt">${esc(ws.title)}</span></div>
+  </div>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(ws.title)}</title>
+  <style>
+    @page { size:A4; margin:12mm; }
+    body { font-family:'Nunito',Arial,sans-serif; color:#222; margin:0; padding:16px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .sec { break-inside:avoid; page-break-inside:avoid; }
+    @media print { .noprint{display:none} }
+  </style></head>
+  <body>
+    <div class="noprint" style="text-align:center;margin-bottom:12px">
+      <button onclick="window.print()" style="background:${theme.ink};color:#fff;border:none;border-radius:20px;padding:8px 20px;font-weight:bold;font-size:14px;cursor:pointer">🖨 In / Lưu PDF</button>
+      <span style="color:#888;font-size:12px;margin-left:8px">Nếu hộp thoại in không tự mở, bấm nút này.</span>
+    </div>
+    ${header}${learnBlock}${exBlocks}
+    <script>window.onload=function(){setTimeout(function(){window.print()},400)}</script>
+  </body></html>`;
+}
+
+// bản màu của richToHtml (giữ ==tô sáng== màu vàng)
+function richToHtmlColor(s) {
+  let t = esc(s);
+  t = t.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+       .replace(/==([^=]+)==/g, '<span style="background:#FFF29A;padding:0 2px;border-radius:3px">$1</span>')
+       .replace(/\*([^*]+)\*/g, "<i>$1</i>");
+  return t.replace(/___/g, "________").replace(/\n/g, "<br>");
+}
+
+// bản màu của exerciseToHtml — dùng ink cho tiêu đề, accent2 cho đáp án
+function exerciseToHtmlColor(ex, idx, showAnswers, theme) {
+  const A = (n) => String.fromCharCode(65 + n);
+  const a = (n) => String.fromCharCode(97 + n);
+  const title = `<div style="font-weight:bold;color:${theme.ink};font-size:13pt">${idx}. ${esc(ex.title)}</div><div style="color:#555;font-size:11pt;margin:2px 0 8px">${esc(ex.instruction || "")}</div>`;
+  let body = "";
+  if (ex.passage && ex.type !== "error_passage") {
+    body += `<div style="background:${theme.softBg};border:1px solid ${theme.line};border-radius:8px;padding:10px;margin-bottom:8px">${richToHtmlColor(ex.passage)}</div>`;
+  }
+  const imgTag = (it, sz) => it.img ? `<img src="${it.img}" style="height:${sz}px;border-radius:6px;vertical-align:middle;margin-right:6px">` : "";
+
+  if (ex.type === "match") {
+    const rights = ex.items.map((it, i) => ({ text: it.answer, orig: i }));
+    body += `<table style="width:100%"><tr><td style="width:50%;vertical-align:top">` +
+      ex.items.map((it, i) => `<div style="margin:5px 0">${showAnswers ? `<b style="color:${theme.accent2}">[${a(i)}]</b> ` : "☐ "}<b>${i + 1}.</b> ${imgTag(it, 30)}${esc(it.prompt)}</div>`).join("") +
+      `</td><td style="width:50%;vertical-align:top">` +
+      rights.map((r, i) => `<div style="margin:5px 0"><b style="color:${theme.accent2}">${a(i)}.</b> <span style="background:${theme.pillBg};color:${theme.pillText};border-radius:10px;padding:3px 10px">${esc(r.text)}</span></div>`).join("") +
+      `</td></tr></table>`;
+  } else if (ex.type === "tick") {
+    body += ex.items.map((it, i) => `<div style="margin:6px 0"><b>${i + 1}.</b>` +
+      (it.options || []).map((op, oi) => { const c = cleanOpt(op) === cleanOpt(it.answer); return `<div style="margin-left:16px${showAnswers && c ? ";color:" + theme.accent2 + ";font-weight:bold" : ""}">${showAnswers && c ? "☑" : "☐"} ${a(oi)}. ${esc(cleanOpt(op))}</div>`; }).join("") +
+      `</div>`).join("");
+  } else if (ex.type === "error_passage") {
+    body += `<div style="background:${theme.softBg};border:1px solid ${theme.line};border-radius:8px;padding:10px;margin-bottom:8px;line-height:2">${richToHtmlColor(ex.passage || "")}</div>`;
+    body += `<table style="width:100%;border-collapse:collapse"><tr><th style="border:1px solid ${theme.line};background:${theme.pillBg};padding:4px">#</th><th style="border:1px solid ${theme.line};background:${theme.pillBg};padding:4px">Từ/cụm sai</th><th style="border:1px solid ${theme.line};background:${theme.pillBg};padding:4px">Sửa lại</th></tr>` +
+      ex.items.map((it, i) => `<tr><td style="border:1px solid ${theme.line};padding:4px">${i + 1}</td><td style="border:1px solid ${theme.line};padding:4px">${showAnswers ? esc(it.prompt) : "&nbsp;"}</td><td style="border:1px solid ${theme.line};padding:4px;color:${theme.accent2}">${showAnswers ? esc(it.answer) : "&nbsp;"}</td></tr>`).join("") + `</table>`;
+  } else if (ex.type === "mcq" || ex.type === "reading" || ex.type === "error_choice") {
+    body += ex.items.map((it, i) => {
+      let line = `<div style="margin:7px 0"><b>${i + 1}.</b> ${imgTag(it, 40)}${richToHtmlColor(it.prompt)}`;
+      if ((it.options || []).length) {
+        line += it.options.map((op, oi) => { const c = cleanOpt(op) === cleanOpt(it.answer); return `<div style="margin-left:16px${showAnswers && c ? ";color:" + theme.accent2 + ";font-weight:bold" : ""}">${A(oi)}. ${esc(cleanOpt(op))}</div>`; }).join("");
+      } else if (showAnswers) line += ` <span style="color:${theme.accent2}">→ ${esc(it.answer)}</span>`;
+      return line + `</div>`;
+    }).join("");
+  } else {
+    body += ex.items.map((it, i) => {
+      let line = `<div style="margin:7px 0"><b>${i + 1}.</b> ${imgTag(it, 40)}${richToHtmlColor(it.prompt)}`;
+      if ((it.options || []).length) line += " ( " + it.options.map((o) => esc(cleanOpt(o))).join(" / ") + " )";
+      if (showAnswers) line += ` <span style="color:${theme.accent2};font-weight:bold">→ ${esc(it.answer)}</span>`;
+      else line += `<div style="border-bottom:1px solid ${theme.line};height:18px;margin-top:3px"></div>`;
+      return line + `</div>`;
+    }).join("");
+  }
+  return title + body;
+}
+
+function printWorksheet(ws, cfg, theme, showAnswers, logo, mascot) {
+  // Lấy NGUYÊN khối worksheet đang render (mọi style nội tuyến đã dính sẵn trên phần tử),
+  // nên bản in giống HỆT màn hình. Không dựng lại bằng tay.
+  const node = document.getElementById("ws-print-root");
+  let inner = "";
+  if (node) {
+    const clone = node.cloneNode(true);
+    // bỏ các phần tử chỉ dành cho màn hình (nút Sửa/Gen lại, nhãn stage...)
+    clone.querySelectorAll(".ws-noprint").forEach((el) => el.remove());
+    inner = clone.outerHTML;
+  } else {
+    inner = "<div>Không tìm thấy nội dung để in.</div>";
+  }
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${(ws && ws.title) || "worksheet"}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700;800&family=Nunito+Sans:wght@500;700;800&display=swap');
+    @page { size: A4; margin: 10mm; }
+    html, body { margin: 0; padding: 0; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    #ws-print-root { box-shadow: none !important; max-width: 100% !important; margin: 0 auto !important; }
+    .ws-noprint { display: none !important; }
+    .ws-section { break-inside: avoid; page-break-inside: avoid; }
+    .ws-print-bar { text-align:center; padding:10px; font-family:'Nunito',sans-serif; }
+    @media print { .ws-print-bar { display:none; } }
+    .ws-print-btn { background:${theme.ink}; color:#fff; border:none; border-radius:20px; padding:8px 22px; font-weight:bold; font-size:14px; cursor:pointer; }
+  </style></head>
+  <body>
+    <div class="ws-print-bar">
+      <button class="ws-print-btn" onclick="window.print()">🖨 In / Lưu PDF</button>
+      <span style="color:#888;font-size:12px;margin-left:8px">Nếu hộp thoại in không tự mở, bấm nút này.</span>
+    </div>
+    ${inner}
+    <script>window.onload=function(){setTimeout(function(){window.print()},500)}<\/script>
+  </body></html>`;
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = ((ws && ws.title) || "worksheet").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_") + (showAnswers ? "_answers" : "") + "_print.html";
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -1157,6 +1307,7 @@ export default function WorksheetGenerator() {
   const [editIdx, setEditIdx] = useState(null);
   const [editLearn, setEditLearn] = useState(false);
   const [showAnswers, setShowAnswers] = useState(false);
+  const [printHint, setPrintHint] = useState(false);
 
   const theme = THEMES[themeOverride || cfg.level];
 
@@ -1391,9 +1542,15 @@ export default function WorksheetGenerator() {
         </select>
         <div style={{ flex: 1 }} />
         <ToolBtn theme={theme} onClick={() => setShowAnswers(!showAnswers)}>{showAnswers ? "🙈 Ẩn đáp án" : "✅ Đáp án"}</ToolBtn>
-        <ToolBtn theme={theme} onClick={() => window.print()}>🖨 In / PDF</ToolBtn>
+        <ToolBtn theme={theme} onClick={() => { printWorksheet(ws, cfg, theme, showAnswers, LOGO_SRC, MASCOT_SRC); setPrintHint(true); setTimeout(() => setPrintHint(false), 12000); }}>🖨 In / PDF</ToolBtn>
         <ToolBtn theme={theme} onClick={() => downloadDoc(ws, cfg, theme, showAnswers)}>📝 Tải Word</ToolBtn>
       </div>
+
+      {printHint ? (
+        <div className="ws-noprint" style={{ maxWidth: 640, margin: "0 auto 12px", background: "#eef7ee", color: "#2e7d4e", borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 700, border: "1.5px solid #cde8d1" }}>
+          ✅ Đã tải file worksheet để in. Mở file <b>..._print.html</b> vừa tải (thường ở góc dưới trình duyệt hoặc thư mục Downloads) — hộp thoại in sẽ tự bật, chọn <b>“Lưu thành PDF”</b> hoặc in ra giấy.
+        </div>
+      ) : null}
 
       {error ? (
         <div className="ws-noprint" style={{ maxWidth: 640, margin: "0 auto 12px", background: "#fff2f2", color: "#c04040", borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 700 }}>
@@ -1408,7 +1565,7 @@ export default function WorksheetGenerator() {
       ) : null}
 
       {ws ? (
-        <div className="ws-page" style={{
+        <div id="ws-print-root" className="ws-page" style={{
           maxWidth: 640, margin: "0 auto", background: "#fff", borderRadius: theme.radius + 6,
           padding: `${theme.gap}px ${theme.gap}px ${theme.gap + 10}px`, boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
         }}>
