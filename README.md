@@ -1,46 +1,62 @@
 # Worksheet Generator
 
-Ứng dụng Next.js tạo worksheet tiếng Anh theo trình độ CEFR (Pre A1 → C2), dùng Claude qua Anthropic API.
+Ứng dụng Next.js (TypeScript) tạo worksheet tiếng Anh theo trình độ CEFR (Pre A1 → C2), dùng Claude qua Anthropic API.
+Có đăng nhập, phân quyền `admin` / `user`, lưu worksheet vào Neon Postgres.
 
-Component gốc gọi thẳng Anthropic API — chỉ chạy được trong môi trường artifact của Claude. Bản này đã thêm một **serverless proxy** (`app/api/claude/route.js`) để giữ API key ở phía server, nên chạy được như một web bình thường trên Vercel.
+## Tính năng
+
+| Module | Ai dùng | Đường dẫn |
+| --- | --- | --- |
+| Tạo / sửa worksheet (AI) | mọi người | `/`, `/worksheets/[id]` |
+| Quản lý worksheet | admin: toàn hệ thống · user: của mình | `/worksheets` |
+| Hồ sơ cá nhân (đổi tên, đổi mật khẩu) | mọi người | `/profile` |
+| Quản lý tài khoản (tạo, sửa role, khoá, reset mật khẩu, xoá) | admin | `/admin/users` |
+| Import tài khoản từ CSV | admin | `/admin/users/import` |
+
+Không có trang đăng ký công khai — admin tạo hoặc import tài khoản. Admin đầu tiên được tạo bằng `npm run db:seed`.
 
 ## Chạy thử ở máy
 
-```bash
-npm install
-cp .env.example .env.local   # rồi mở .env.local, điền key thật
-npm run dev                  # mở http://localhost:3000
-```
+1. Tạo project trên https://console.neon.tech, copy connection string.
+2. Cấu hình:
+   ```bash
+   npm install
+   cp .env.example .env.local   # điền ANTHROPIC_API_KEY, DATABASE_URL, ADMIN_EMAIL, ADMIN_PASSWORD
+   ```
+3. Tạo bảng và admin đầu tiên:
+   ```bash
+   npm run db:migrate
+   npm run db:seed
+   ```
+4. `npm run dev` → mở http://localhost:3000 và đăng nhập bằng tài khoản admin.
 
 Lấy API key tại https://console.anthropic.com → API Keys. Tài khoản cần có credit thì mới sinh được worksheet.
 
+### Scripts
+
+| Lệnh | Việc |
+| --- | --- |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run db:generate` | sinh migration mới sau khi sửa `db/schema.ts` |
+| `npm run db:migrate` | áp migration lên `DATABASE_URL` |
+| `npm run db:seed` | tạo admin từ `ADMIN_*` (nếu email đã có: chỉ đảm bảo role admin, không đổi mật khẩu) |
+| `npm run db:studio` | Drizzle Studio xem dữ liệu |
+
+## Import CSV
+
+Dòng đầu là tiêu đề `email,name,role,password`. `role` trống = `user`; `password` trống = tự sinh.
+Sau khi import có nút tải danh sách tài khoản kèm mật khẩu đã sinh (chỉ tải được ngay lúc đó). Email trùng bị bỏ qua. Tối đa 500 dòng/lần.
+
 ## Deploy lên Vercel
 
-**Cách A — qua GitHub (khuyên dùng):**
-1. Đẩy thư mục này lên một repo GitHub.
-2. Vào https://vercel.com → **Add New… → Project** → chọn repo. Vercel tự nhận diện Next.js.
-3. Ở bước cấu hình (hoặc sau này trong **Settings → Environment Variables**), thêm:
-   - Name: `ANTHROPIC_API_KEY`
-   - Value: key thật của bạn
-4. Bấm **Deploy**.
-
-**Cách B — qua Vercel CLI:**
-```bash
-npm i -g vercel
-vercel                                   # deploy lần đầu, làm theo hướng dẫn đăng nhập
-vercel env add ANTHROPIC_API_KEY         # dán key khi được hỏi (chọn cả Production/Preview/Development)
-vercel --prod                            # deploy bản chính thức
-```
-
-Sau khi thêm hoặc đổi biến môi trường, cần **redeploy** để có hiệu lực.
-
-## Ghi chú về model
-
-Component đang gửi model `claude-sonnet-4-6`. Nếu API trả lỗi model không tồn tại, mở
-`components/WorksheetGenerator.jsx`, tìm `model:` trong hàm `callClaudeRaw` và đổi sang một
-model string hợp lệ trong tài khoản của bạn (xem danh sách tại https://docs.claude.com).
+1. Đẩy repo lên GitHub, import vào Vercel (tự nhận diện Next.js). Có thể dùng Neon integration của Vercel để tự thêm `DATABASE_URL`.
+2. Thêm Environment Variables: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` (tuỳ chọn), `DATABASE_URL`.
+3. Chạy `npm run db:migrate` và `npm run db:seed` một lần từ máy (trỏ `DATABASE_URL` tới DB production).
+4. Deploy. Sau khi đổi biến môi trường cần **redeploy**.
 
 ## Bảo mật
 
 - Không commit `.env.local` (đã có trong `.gitignore`).
-- API key chỉ nằm ở server; trình duyệt chỉ gọi tới `/api/claude`.
+- API key chỉ nằm ở server; `/api/claude` chỉ cho phép người đã đăng nhập.
+- Session lưu trong DB (cookie httpOnly, DB chỉ lưu sha256 của token). Khoá tài khoản, đổi role hoặc reset mật khẩu sẽ đăng xuất người đó khỏi mọi thiết bị.
+- Mật khẩu hash bằng bcrypt.
