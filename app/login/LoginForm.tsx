@@ -10,8 +10,8 @@ export function LoginForm({ next }: { next?: string }) {
     <form action={action} className="space-y-4">
       {state.error && <Alert>{state.error}</Alert>}
       <input type="hidden" name="next" value={next ?? ""} />
-      <Field label="Email">
-        <Input name="email" type="email" autoComplete="email" required autoFocus defaultValue={state.email} />
+      <Field label="Tên đăng nhập hoặc email">
+        <Input name="identifier" autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus defaultValue={state.identifier} />
       </Field>
       <Field label="Mật khẩu">
         <Input name="password" type="password" autoComplete="current-password" required />

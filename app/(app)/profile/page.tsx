@@ -15,8 +15,11 @@ export default async function ProfilePage() {
       <PageTitle title="Hồ sơ cá nhân" sub={`${n} worksheet`} />
       <Card className="space-y-4">
         <h2 className="text-base font-semibold">Thông tin tài khoản</h2>
-        <Field label="Email">
-          <Input value={user.email} disabled readOnly />
+        <Field label="Username">
+          <Input value={user.username} disabled readOnly />
+        </Field>
+        <Field label="Email" hint="Liên hệ quản trị viên để thay đổi email.">
+          <Input value={user.email ?? ""} placeholder="Chưa có" disabled readOnly />
         </Field>
         <div className="text-sm">
           Vai trò: {user.role === "admin" ? <Badge tone="amber">admin</Badge> : <Badge>user</Badge>}

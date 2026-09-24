@@ -15,7 +15,7 @@ export function AppHeader({ user }: { user: SessionUser }) {
         <Link href="/" className="whitespace-nowrap font-bold text-sky-700">📝 Worksheet</Link>
         <NavLinks links={links} />
         <div className="ml-auto flex items-center gap-2 text-sm">
-          <Link href="/profile" className="hidden rounded-lg px-2 py-1 hover:bg-slate-100 sm:block" title={user.email}>
+          <Link href="/profile" className="hidden rounded-lg px-2 py-1 hover:bg-slate-100 sm:block" title={`@${user.username}`}>
             {user.name}
             {user.role === "admin" && <span className="ml-1 rounded bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">admin</span>}
           </Link>

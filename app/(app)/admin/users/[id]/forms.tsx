@@ -6,7 +6,7 @@ import type { Role } from "@/db/schema";
 import { resetPassword, updateUser, type FormState } from "../actions";
 import { PasswordReveal } from "../PasswordReveal";
 
-type EditableUser = { id: string; email: string; name: string; role: Role; isActive: boolean };
+type EditableUser = { id: string; username: string; email: string | null; name: string; role: Role; isActive: boolean };
 
 export function EditUserForm({ user, isSelf }: { user: EditableUser; isSelf: boolean }) {
   const [state, action] = useFormState<FormState, FormData>(updateUser, {});
@@ -15,8 +15,11 @@ export function EditUserForm({ user, isSelf }: { user: EditableUser; isSelf: boo
       {state.error && <Alert>{state.error}</Alert>}
       {state.success && <Alert kind="success">{state.success}</Alert>}
       <input type="hidden" name="id" value={user.id} />
-      <Field label="Email" hint="Email không thể thay đổi.">
-        <Input value={user.email} disabled readOnly />
+      <Field label="Username" hint="Username dùng để đăng nhập, không thể thay đổi.">
+        <Input value={user.username} disabled readOnly />
+      </Field>
+      <Field label="Email" error={state.fields?.email} hint="Không bắt buộc. Nếu có, người dùng đăng nhập bằng email cũng được.">
+        <Input name="email" type="email" defaultValue={user.email ?? ""} autoComplete="off" />
       </Field>
       <Field label="Họ tên" error={state.fields?.name}>
         <Input name="name" defaultValue={user.name} required />
@@ -39,14 +42,14 @@ export function EditUserForm({ user, isSelf }: { user: EditableUser; isSelf: boo
   );
 }
 
-export function ResetPasswordForm({ id, email }: { id: string; email: string }) {
+export function ResetPasswordForm({ id, username }: { id: string; username: string }) {
   const [state, action] = useFormState<FormState, FormData>(resetPassword, {});
   return (
     <form action={action} className="space-y-3">
       {state.error && <Alert>{state.error}</Alert>}
-      {state.generatedPassword && <PasswordReveal email={email} password={state.generatedPassword} />}
+      {state.generatedPassword && <PasswordReveal username={username} password={state.generatedPassword} />}
       <input type="hidden" name="id" value={id} />
-      <SubmitButton variant="secondary" pendingText="Đang đặt lại..." confirm={`Đặt lại mật khẩu cho ${email}?`}>
+      <SubmitButton variant="secondary" pendingText="Đang đặt lại..." confirm={`Đặt lại mật khẩu cho ${username}?`}>
         Đặt lại mật khẩu
       </SubmitButton>
     </form>

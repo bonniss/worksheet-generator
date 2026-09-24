@@ -1,18 +1,35 @@
 import { z } from "zod";
+import { USERNAME_HINT, USERNAME_RE } from "./username";
+
+export { USERNAME_HINT, USERNAME_RE };
 
 export const ROLES = ["admin", "user"] as const;
 
+const username = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(USERNAME_RE, `Username không hợp lệ (${USERNAME_HINT})`);
 const email = z.string().trim().toLowerCase().pipe(z.email("Email không hợp lệ"));
+// Trống → null
+const optionalEmail = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v) => v || null)
+  .pipe(z.union([z.null(), email]));
 const name = z.string().trim().min(1, "Tên không được trống").max(100, "Tên tối đa 100 ký tự");
 export const password = z.string().min(8, "Mật khẩu tối thiểu 8 ký tự").max(128, "Mật khẩu tối đa 128 ký tự");
 
 export const loginSchema = z.object({
-  email,
+  // username hoặc email
+  identifier: z.string().trim().toLowerCase().min(1),
   password: z.string().min(1, "Nhập mật khẩu"),
 });
 
 export const createUserSchema = z.object({
-  email,
+  username,
+  email: optionalEmail,
   name,
   role: z.enum(ROLES),
   // trống → tự sinh
@@ -21,6 +38,7 @@ export const createUserSchema = z.object({
 
 export const updateUserSchema = z.object({
   name,
+  email: optionalEmail,
   role: z.enum(ROLES),
   isActive: z.boolean(),
 });
@@ -39,8 +57,9 @@ export const changePasswordSchema = z
   });
 
 export const importRowSchema = z.object({
-  email,
+  username,
   name,
+  email: optionalEmail,
   role: z
     .string()
     .trim()

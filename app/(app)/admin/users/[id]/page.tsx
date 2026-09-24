@@ -17,7 +17,7 @@ export default async function EditUserPage({ params }: { params: { id: string } 
   if (!isUuid(params.id)) notFound();
   const [[user], [{ n }]] = await Promise.all([
     db
-      .select({ id: users.id, email: users.email, name: users.name, role: users.role, isActive: users.isActive, createdAt: users.createdAt })
+      .select({ id: users.id, username: users.username, email: users.email, name: users.name, role: users.role, isActive: users.isActive, createdAt: users.createdAt })
       .from(users)
       .where(eq(users.id, params.id))
       .limit(1),
@@ -30,7 +30,7 @@ export default async function EditUserPage({ params }: { params: { id: string } 
     <main className="app-ui mx-auto max-w-xl space-y-4 px-4 py-6">
       <PageTitle
         title={user.name}
-        sub={`${user.email} · tạo ngày ${user.createdAt.toLocaleDateString("vi-VN")} · ${n} worksheet`}
+        sub={`@${user.username}${user.email ? ` · ${user.email}` : ""} · tạo ngày ${user.createdAt.toLocaleDateString("vi-VN")} · ${n} worksheet`}
         actions={<Link href="/admin/users" className={buttonClass("ghost")}>← Danh sách</Link>}
       />
 
@@ -44,7 +44,7 @@ export default async function EditUserPage({ params }: { params: { id: string } 
           <Card>
             <h2 className="mb-1 text-base font-semibold">Đặt lại mật khẩu</h2>
             <p className="mb-3 text-sm text-slate-500">Sinh mật khẩu ngẫu nhiên mới và đăng xuất người dùng khỏi mọi thiết bị.</p>
-            <ResetPasswordForm id={user.id} email={user.email} />
+            <ResetPasswordForm id={user.id} username={user.username} />
           </Card>
 
           <Card className="border-red-200">
@@ -52,7 +52,7 @@ export default async function EditUserPage({ params }: { params: { id: string } 
             <p className="mb-3 text-sm text-slate-500">Xoá vĩnh viễn tài khoản và toàn bộ {n} worksheet của người dùng này.</p>
             <form action={deleteUser}>
               <input type="hidden" name="id" value={user.id} />
-              <SubmitButton variant="danger" pendingText="Đang xoá..." confirm={`Xoá vĩnh viễn ${user.email} và ${n} worksheet?`}>
+              <SubmitButton variant="danger" pendingText="Đang xoá..." confirm={`Xoá vĩnh viễn ${user.username} và ${n} worksheet?`}>
                 Xoá tài khoản
               </SubmitButton>
             </form>
