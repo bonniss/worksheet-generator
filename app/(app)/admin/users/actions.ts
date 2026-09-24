@@ -1,5 +1,5 @@
 "use server";
-import { and, count, eq, inArray, ne } from "drizzle-orm";
+import { and, count, eq, inArray, ne, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
@@ -14,8 +14,8 @@ export type FormState = {
   error?: string;
   fields?: Record<string, string>;
   success?: string;
-  /** Email của tài khoản vừa tạo */
-  email?: string;
+  /** Username của tài khoản vừa tạo */
+  username?: string;
   /** Mật khẩu vừa sinh — chỉ hiển thị một lần */
   generatedPassword?: string;
 };
@@ -29,30 +29,41 @@ async function hasOtherActiveAdmin(userId: string): Promise<boolean> {
   return n > 0;
 }
 
-async function emailTaken(email: string): Promise<boolean> {
-  const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
-  return !!row;
+/** Lỗi trùng username/email (bỏ qua chính tài khoản `exceptId`). */
+async function uniquenessErrors(username: string | null, email: string | null, exceptId?: string) {
+  const fields: Record<string, string> = {};
+  const clauses = [username ? eq(users.username, username) : undefined, email ? eq(users.email, email) : undefined];
+  if (!clauses.some(Boolean)) return fields;
+  const rows = await db
+    .select({ username: users.username, email: users.email })
+    .from(users)
+    .where(and(or(...clauses), exceptId ? ne(users.id, exceptId) : undefined));
+  if (username && rows.some((r) => r.username === username)) fields.username = "Username đã tồn tại";
+  if (email && rows.some((r) => r.email === email)) fields.email = "Email đã được dùng cho tài khoản khác";
+  return fields;
 }
 
 export async function createUser(_prev: FormState, formData: FormData): Promise<FormState> {
   await requireAdmin();
   const parsed = createUserSchema.safeParse({
-    email: formData.get("email"),
+    username: formData.get("username") ?? "",
+    email: formData.get("email") ?? "",
     name: formData.get("name"),
     role: formData.get("role"),
     password: formData.get("password") ?? "",
   });
   if (!parsed.success) return { fields: fieldErrors(parsed.error) };
-  const { email, name, role } = parsed.data;
-  if (await emailTaken(email)) return { fields: { email: "Email đã tồn tại" } };
+  const { username, email, name, role } = parsed.data;
+  const taken = await uniquenessErrors(username, email);
+  if (Object.keys(taken).length) return { fields: taken };
 
   const generated = parsed.data.password ? undefined : generatePassword();
   const password = parsed.data.password || generated!;
-  await db.insert(users).values({ email, name, role, passwordHash: await hashPassword(password) });
+  await db.insert(users).values({ username, email, name, role, passwordHash: await hashPassword(password) });
   revalidatePath("/admin/users");
   return {
-    success: `Đã tạo tài khoản ${email}.`,
-    email,
+    success: `Đã tạo tài khoản ${username}.`,
+    username,
     generatedPassword: generated,
   };
 }
@@ -63,6 +74,7 @@ export async function updateUser(_prev: FormState, formData: FormData): Promise<
   if (!isUuid(id)) return { error: "Tài khoản không tồn tại." };
   const parsed = updateUserSchema.safeParse({
     name: formData.get("name"),
+    email: formData.get("email") ?? "",
     role: formData.get("role"),
     isActive: formData.get("isActive") === "on",
   });
@@ -70,7 +82,9 @@ export async function updateUser(_prev: FormState, formData: FormData): Promise<
 
   const [target] = await db.select().from(users).where(eq(users.id, id)).limit(1);
   if (!target) return { error: "Tài khoản không tồn tại." };
-  const { name, role, isActive } = parsed.data;
+  const { name, email, role, isActive } = parsed.data;
+  const taken = await uniquenessErrors(null, email, id);
+  if (Object.keys(taken).length) return { fields: taken };
 
   if (id === me.id && (role !== "admin" || !isActive)) {
     return { error: "Bạn không thể tự hạ quyền hoặc tự khoá tài khoản của mình." };
@@ -80,7 +94,7 @@ export async function updateUser(_prev: FormState, formData: FormData): Promise<
     return { error: "Phải còn ít nhất một admin đang hoạt động." };
   }
 
-  await db.update(users).set({ name, role, isActive, updatedAt: new Date() }).where(eq(users.id, id));
+  await db.update(users).set({ name, email, role, isActive, updatedAt: new Date() }).where(eq(users.id, id));
   // Đổi quyền hoặc khoá → đăng xuất khỏi mọi thiết bị
   if (role !== target.role || isActive !== target.isActive) await revokeUserSessions(id);
   revalidatePath("/admin/users");
@@ -119,11 +133,12 @@ export async function deleteUser(formData: FormData) {
 
 /* ===== IMPORT ===== */
 
+type ImportRowResult = { line: number; username: string };
 export type ImportResult = {
   error?: string;
-  created: { line: number; email: string; name: string; role: string; password?: string }[];
-  skipped: { line: number; email: string; reason: string }[];
-  errors: { line: number; email: string; message: string }[];
+  created: (ImportRowResult & { name: string; email: string | null; role: string; password?: string })[];
+  skipped: (ImportRowResult & { reason: string })[];
+  errors: (ImportRowResult & { message: string })[];
 };
 
 /** `rows[i].line` là số dòng trong file CSV (để báo lỗi đúng chỗ). */
@@ -133,53 +148,66 @@ export async function importUsers(rows: (ImportRowInput & { line: number })[]): 
   if (!Array.isArray(rows) || rows.length === 0) return { ...result, error: "File không có dòng dữ liệu nào." };
   if (rows.length > MAX_IMPORT_ROWS) return { ...result, error: `Tối đa ${MAX_IMPORT_ROWS} dòng mỗi lần import.` };
 
-  const valid: { line: number; email: string; name: string; role: "admin" | "user"; password: string; generated: boolean }[] = [];
-  const seen = new Set<string>();
+  type Valid = { line: number; username: string; email: string | null; name: string; role: "admin" | "user"; password: string; generated: boolean };
+  const valid: Valid[] = [];
+  const seenUsernames = new Set<string>();
+  const seenEmails = new Set<string>();
   for (const raw of rows) {
     const line = Number(raw.line) || 0;
     const parsed = importRowSchema.safeParse(raw);
     if (!parsed.success) {
-      result.errors.push({ line, email: String(raw.email ?? ""), message: Object.values(fieldErrors(parsed.error)).join("; ") });
+      result.errors.push({ line, username: String(raw.username ?? ""), message: Object.values(fieldErrors(parsed.error)).join("; ") });
       continue;
     }
-    const { email, name, role } = parsed.data;
-    if (seen.has(email)) {
-      result.skipped.push({ line, email, reason: "Trùng email trong file" });
+    const { username, email, name, role } = parsed.data;
+    // Giữ dòng xuất hiện đầu tiên, các dòng trùng sau bị bỏ qua
+    if (seenUsernames.has(username)) {
+      result.skipped.push({ line, username, reason: "Trùng username trong file" });
       continue;
     }
-    seen.add(email);
+    if (email && seenEmails.has(email)) {
+      result.skipped.push({ line, username, reason: "Trùng email trong file" });
+      continue;
+    }
+    seenUsernames.add(username);
+    if (email) seenEmails.add(email);
     const generated = !parsed.data.password;
-    valid.push({ line, email, name, role, password: parsed.data.password || generatePassword(), generated });
+    valid.push({ line, username, email, name, role, password: parsed.data.password || generatePassword(), generated });
   }
 
   if (valid.length) {
-    const existing = await db
-      .select({ email: users.email })
-      .from(users)
-      .where(inArray(users.email, valid.map((v) => v.email)));
-    const taken = new Set(existing.map((e) => e.email));
+    const emails = valid.flatMap((v) => (v.email ? [v.email] : []));
+    const [byUsername, byEmail] = await Promise.all([
+      db.select({ v: users.username }).from(users).where(inArray(users.username, valid.map((v) => v.username))),
+      emails.length ? db.select({ v: users.email }).from(users).where(inArray(users.email, emails)) : Promise.resolve([]),
+    ]);
+    const takenUsernames = new Set(byUsername.map((r) => r.v));
+    const takenEmails = new Set(byEmail.map((r) => r.v));
     const toCreate = valid.filter((v) => {
-      if (!taken.has(v.email)) return true;
-      result.skipped.push({ line: v.line, email: v.email, reason: "Email đã tồn tại" });
-      return false;
+      const reason = takenUsernames.has(v.username) ? "Username đã tồn tại"
+        : v.email && takenEmails.has(v.email) ? "Email đã được dùng cho tài khoản khác" : null;
+      if (reason) result.skipped.push({ line: v.line, username: v.username, reason });
+      return !reason;
     });
 
     if (toCreate.length) {
       const values = await Promise.all(
-        toCreate.map(async (v) => ({ email: v.email, name: v.name, role: v.role, passwordHash: await hashPassword(v.password) })),
+        toCreate.map(async (v) => ({
+          username: v.username, email: v.email, name: v.name, role: v.role, passwordHash: await hashPassword(v.password),
+        })),
       );
-      // Một câu INSERT duy nhất: hoặc tạo hết, hoặc không tạo gì. ON CONFLICT phòng trường hợp bị tạo chen giữa chừng.
-      const inserted = await db
-        .insert(users)
-        .values(values)
-        .onConflictDoNothing({ target: users.email })
-        .returning({ email: users.email });
-      const insertedSet = new Set(inserted.map((i) => i.email));
+      // Một câu INSERT duy nhất. ON CONFLICT (không chỉ định cột) bỏ qua dòng vi phạm unique username hoặc email
+      // nếu có tài khoản được tạo chen vào giữa chừng.
+      const inserted = await db.insert(users).values(values).onConflictDoNothing().returning({ username: users.username });
+      const insertedSet = new Set(inserted.map((i) => i.username));
       for (const v of toCreate) {
-        if (insertedSet.has(v.email)) {
-          result.created.push({ line: v.line, email: v.email, name: v.name, role: v.role, password: v.generated ? v.password : undefined });
+        if (insertedSet.has(v.username)) {
+          result.created.push({
+            line: v.line, username: v.username, name: v.name, email: v.email, role: v.role,
+            password: v.generated ? v.password : undefined,
+          });
         } else {
-          result.skipped.push({ line: v.line, email: v.email, reason: "Email đã tồn tại" });
+          result.skipped.push({ line: v.line, username: v.username, reason: "Username hoặc email đã tồn tại" });
         }
       }
     }

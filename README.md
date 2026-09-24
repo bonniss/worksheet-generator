@@ -1,7 +1,7 @@
 # Worksheet Generator
 
 Ứng dụng Next.js (TypeScript) tạo worksheet tiếng Anh theo trình độ CEFR (Pre A1 → C2), dùng Claude qua Anthropic API.
-Có đăng nhập, phân quyền `admin` / `user`, lưu worksheet vào Neon Postgres.
+Có đăng nhập (username hoặc email), phân quyền `admin` / `user`, lưu worksheet vào Neon Postgres.
 
 ## Tính năng
 
@@ -15,13 +15,16 @@ Có đăng nhập, phân quyền `admin` / `user`, lưu worksheet vào Neon Post
 
 Không có trang đăng ký công khai — admin tạo hoặc import tài khoản. Admin đầu tiên được tạo bằng `npm run db:seed`.
 
+Mỗi tài khoản có **username** bắt buộc (3–32 ký tự: chữ thường a-z, số, `.` `_` `-`), không đổi được sau khi tạo.
+**Email** không bắt buộc; nếu có thì đăng nhập bằng email cũng được.
+
 ## Chạy thử ở máy
 
 1. Tạo project trên https://console.neon.tech, copy connection string.
 2. Cấu hình:
    ```bash
    npm install
-   cp .env.example .env.local   # điền ANTHROPIC_API_KEY, DATABASE_URL, ADMIN_EMAIL, ADMIN_PASSWORD
+   cp .env.example .env.local   # điền ANTHROPIC_API_KEY, DATABASE_URL, ADMIN_USERNAME, ADMIN_PASSWORD
    ```
 3. Tạo bảng và admin đầu tiên:
    ```bash
@@ -39,13 +42,14 @@ Lấy API key tại https://console.anthropic.com → API Keys. Tài khoản c�
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run db:generate` | sinh migration mới sau khi sửa `db/schema.ts` |
 | `npm run db:migrate` | áp migration lên `DATABASE_URL` |
-| `npm run db:seed` | tạo admin từ `ADMIN_*` (nếu email đã có: chỉ đảm bảo role admin, không đổi mật khẩu) |
+| `npm run db:seed` | tạo admin từ `ADMIN_*` (nếu username đã có: chỉ đảm bảo role admin, không đổi mật khẩu) |
 | `npm run db:studio` | Drizzle Studio xem dữ liệu |
 
 ## Import CSV
 
-Dòng đầu là tiêu đề `email,name,role,password`. `role` trống = `user`; `password` trống = tự sinh.
-Sau khi import có nút tải danh sách tài khoản kèm mật khẩu đã sinh (chỉ tải được ngay lúc đó). Email trùng bị bỏ qua. Tối đa 500 dòng/lần.
+Dòng đầu là tiêu đề `username,name,email,role,password`. `username` và `name` bắt buộc; `email` tuỳ chọn;
+`role` trống = `user`; `password` trống = tự sinh.
+Sau khi import có nút tải danh sách tài khoản kèm mật khẩu đã sinh (chỉ tải được ngay lúc đó). Username/email trùng bị bỏ qua. Tối đa 500 dòng/lần.
 
 ## Deploy lên Vercel
 

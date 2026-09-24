@@ -39,14 +39,17 @@ export function Button({
 }
 
 const fieldClass =
-  "w-full rounded-lg border border-solid border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:bg-slate-100";
+  "rounded-lg border border-solid border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:bg-slate-100";
+
+// Mặc định full width, trừ khi className tự đặt width (w-auto, w-40...)
+const withWidth = (className?: string) => cx(fieldClass, !/(^|\s)w-/.test(className ?? "") && "w-full", className);
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={cx(fieldClass, props.className)} />;
+  return <input {...props} className={withWidth(props.className)} />;
 }
 
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={cx(fieldClass, props.className)} />;
+  return <select {...props} className={withWidth(props.className)} />;
 }
 
 export function Field({ label, error, hint, children }: { label: string; error?: string; hint?: string; children: ReactNode }) {

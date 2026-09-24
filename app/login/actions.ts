@@ -7,7 +7,7 @@ import { verifyPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 import { loginSchema } from "@/lib/validators";
 
-export type LoginState = { error?: string; email?: string };
+export type LoginState = { error?: string; identifier?: string };
 
 // Hash giả để thời gian phản hồi giống nhau khi email không tồn tại
 const DUMMY_HASH = "$2b$10$4quPTQdTlP4ZnyhVA7vcwumc2bgEL9eTfRUB81RWiavS9ly/Jrk5C";
@@ -18,14 +18,20 @@ function safeNext(next: FormDataEntryValue | null): string {
 }
 
 export async function login(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const parsed = loginSchema.safeParse({ email: formData.get("email"), password: formData.get("password") });
-  const email = String(formData.get("email") ?? "");
-  if (!parsed.success) return { error: "Email hoặc mật khẩu không đúng.", email };
+  const identifier = String(formData.get("identifier") ?? "");
+  const parsed = loginSchema.safeParse({ identifier, password: formData.get("password") });
+  if (!parsed.success) return { error: "Tên đăng nhập hoặc mật khẩu không đúng.", identifier };
 
-  const [user] = await db.select().from(users).where(eq(users.email, parsed.data.email)).limit(1);
+  // Có @ → đăng nhập bằng email, không thì bằng username
+  const id = parsed.data.identifier;
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(id.includes("@") ? eq(users.email, id) : eq(users.username, id))
+    .limit(1);
   const ok = await verifyPassword(parsed.data.password, user?.passwordHash ?? DUMMY_HASH);
-  if (!user || !ok) return { error: "Email hoặc mật khẩu không đúng.", email };
-  if (!user.isActive) return { error: "Tài khoản đã bị khoá. Liên hệ quản trị viên.", email };
+  if (!user || !ok) return { error: "Tên đăng nhập hoặc mật khẩu không đúng.", identifier };
+  if (!user.isActive) return { error: "Tài khoản đã bị khoá. Liên hệ quản trị viên.", identifier };
 
   await createSession(user.id);
   redirect(safeNext(formData.get("next")));

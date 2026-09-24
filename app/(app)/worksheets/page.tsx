@@ -33,7 +33,7 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
     db
       .select({
         id: worksheets.id, title: worksheets.title, level: worksheets.level, type: worksheets.type,
-        topic: worksheets.topic, updatedAt: worksheets.updatedAt, ownerName: users.name, ownerEmail: users.email,
+        topic: worksheets.topic, updatedAt: worksheets.updatedAt, ownerName: users.name, ownerUsername: users.username,
       })
       .from(worksheets)
       .innerJoin(users, eq(worksheets.ownerId, users.id))
@@ -43,7 +43,7 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
       .offset((page - 1) * PAGE_SIZE),
     db.select({ total: count() }).from(worksheets).where(where),
     isAdmin
-      ? db.select({ id: users.id, name: users.name, email: users.email }).from(users).orderBy(users.name)
+      ? db.select({ id: users.id, name: users.name, username: users.username }).from(users).orderBy(users.name)
       : Promise.resolve([]),
   ]);
 
@@ -67,7 +67,7 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
           {isAdmin && (
             <Select name="owner" defaultValue={searchParams.owner ?? ""} className="w-auto max-w-[260px]">
               <option value="">Mọi người dùng</option>
-              {owners.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.email})</option>)}
+              {owners.map((o) => <option key={o.id} value={o.id}>{o.name} (@{o.username})</option>)}
             </Select>
           )}
           <button className={buttonClass("secondary")}>Lọc</button>
@@ -103,7 +103,7 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
                 {isAdmin && (
                   <td className="px-4 py-3">
                     <div>{r.ownerName}</div>
-                    <div className="text-xs text-slate-500">{r.ownerEmail}</div>
+                    <div className="text-xs text-slate-500">@{r.ownerUsername}</div>
                   </td>
                 )}
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">{r.updatedAt.toLocaleString("vi-VN")}</td>

@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { useFormState } from "react-dom";
 import { Alert, Field, Input, Select } from "@/components/ui";
 import { SubmitButton } from "@/components/ui/SubmitButton";
+import { USERNAME_HINT } from "@/lib/username";
 import { createUser, type FormState } from "../actions";
 import { PasswordReveal } from "../PasswordReveal";
 
@@ -18,10 +19,13 @@ export function CreateUserForm() {
     <form ref={formRef} action={action} className="space-y-4">
       {state.error && <Alert>{state.error}</Alert>}
       {state.success && <Alert kind="success">{state.success}</Alert>}
-      {state.generatedPassword && <PasswordReveal email={state.email} password={state.generatedPassword} />}
+      {state.generatedPassword && <PasswordReveal username={state.username} password={state.generatedPassword} />}
 
-      <Field label="Email" error={state.fields?.email}>
-        <Input name="email" type="email" required autoComplete="off" />
+      <Field label="Username" error={state.fields?.username} hint={USERNAME_HINT}>
+        <Input name="username" required autoComplete="off" autoCapitalize="none" spellCheck={false} pattern="[A-Za-z0-9._-]{3,32}" />
+      </Field>
+      <Field label="Email" error={state.fields?.email} hint="Không bắt buộc. Nếu có, người dùng đăng nhập bằng email cũng được.">
+        <Input name="email" type="email" autoComplete="off" />
       </Field>
       <Field label="Họ tên" error={state.fields?.name}>
         <Input name="name" required />

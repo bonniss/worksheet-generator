@@ -6,7 +6,10 @@ export type Role = (typeof roleEnum.enumValues)[number];
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
-  email: text("email").notNull().unique(),
+  // Định danh đăng nhập: a-z 0-9 . _ - (3–32 ký tự), luôn chữ thường
+  username: text("username").notNull().unique(),
+  // Tuỳ chọn; nếu có thì cũng dùng để đăng nhập được
+  email: text("email").unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   role: roleEnum("role").notNull().default("user"),

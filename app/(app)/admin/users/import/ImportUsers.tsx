@@ -2,13 +2,20 @@
 import Papa from "papaparse";
 import { useState, useTransition, type ChangeEvent } from "react";
 import { Alert, Badge, Button, Card } from "@/components/ui";
+import { USERNAME_HINT, USERNAME_RE } from "@/lib/username";
 import { importUsers, type ImportResult } from "../actions";
 
-type Row = { line: number; email: string; name: string; role: string; password: string };
+type Row = { line: number; username: string; name: string; email: string; role: string; password: string };
 type Preview = { row: Row; problem?: string };
 
-const COLUMNS = ["email", "name", "role", "password"] as const;
-const TEMPLATE = "email,name,role,password\nnguyenvana@example.com,Nguyễn Văn A,user,\ntranthib@example.com,Trần Thị B,admin,MatKhau@123\n";
+const COLUMNS = ["username", "name", "email", "role", "password"] as const;
+const REQUIRED = ["username", "name"];
+const TEMPLATE = [
+  COLUMNS.join(","),
+  "nguyenvana,Nguyễn Văn A,,user,",
+  "tranthib,Trần Thị B,tranthib@example.com,admin,MatKhau@123",
+  "hs.lop5a_01,Lê Văn C,,,",
+].join("\n") + "\n";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function download(filename: string, content: string) {
@@ -23,8 +30,9 @@ function download(filename: string, content: string) {
 
 // Kiểm tra sơ bộ để xem trước; server vẫn validate lại toàn bộ.
 function checkRow(r: Row): string | undefined {
-  if (!EMAIL_RE.test(r.email)) return "Email không hợp lệ";
+  if (!USERNAME_RE.test(r.username)) return `Username không hợp lệ (${USERNAME_HINT})`;
   if (!r.name) return "Thiếu tên";
+  if (r.email && !EMAIL_RE.test(r.email)) return "Email không hợp lệ";
   if (r.role && r.role !== "admin" && r.role !== "user") return "Role phải là admin hoặc user";
   if (r.password && r.password.length < 8) return "Mật khẩu tối thiểu 8 ký tự";
   return undefined;
@@ -51,7 +59,7 @@ export function ImportUsers({ maxRows }: { maxRows: number }) {
       transformHeader: (h) => h.trim().toLowerCase(),
       complete: ({ data, meta, errors }) => {
         const fields = meta.fields ?? [];
-        const missing = ["email", "name"].filter((c) => !fields.includes(c));
+        const missing = REQUIRED.filter((c) => !fields.includes(c));
         if (missing.length) {
           setParseError(`Thiếu cột bắt buộc: ${missing.join(", ")}. Dòng đầu tiên phải là tiêu đề: ${COLUMNS.join(",")}`);
           return;
@@ -65,19 +73,26 @@ export function ImportUsers({ maxRows }: { maxRows: number }) {
         const rows = data.map<Preview>((d, i) => {
           const row: Row = {
             line: i + 2, // +1 tiêu đề, +1 vì đếm từ 1
-            email: (d.email ?? "").trim().toLowerCase(),
+            username: (d.username ?? "").trim().toLowerCase(),
             name: (d.name ?? "").trim(),
+            email: (d.email ?? "").trim().toLowerCase(),
             role: (d.role ?? "").trim().toLowerCase(),
             password: (d.password ?? "").trim(),
           };
           return { row, problem: checkRow(row) };
         });
         // Giống server: giữ lần xuất hiện đầu tiên, các dòng trùng sau đó bị bỏ qua
-        const seen = new Set<string>();
+        const seenUsernames = new Set<string>();
+        const seenEmails = new Set<string>();
         for (const p of rows) {
           if (p.problem) continue;
-          if (seen.has(p.row.email)) p.problem = "Trùng email trong file";
-          else seen.add(p.row.email);
+          const { username, email } = p.row;
+          if (seenUsernames.has(username)) p.problem = "Trùng username trong file";
+          else if (email && seenEmails.has(email)) p.problem = "Trùng email trong file";
+          else {
+            seenUsernames.add(username);
+            if (email) seenEmails.add(email);
+          }
         }
         setPreview(rows);
       },
@@ -100,7 +115,8 @@ export function ImportUsers({ maxRows }: { maxRows: number }) {
   function downloadCredentials() {
     if (!result) return;
     const csv = Papa.unparse(result.created.map((c) => ({
-      email: c.email, name: c.name, role: c.role, password: c.password ?? "(mật khẩu trong file)",
+      username: c.username, name: c.name, email: c.email ?? "", role: c.role,
+      password: c.password ?? "(mật khẩu trong file)",
     })));
     download("tai-khoan-da-tao.csv", csv);
   }
@@ -112,7 +128,8 @@ export function ImportUsers({ maxRows }: { maxRows: number }) {
     <div className="space-y-4">
       <Card>
         <p className="mb-3 text-sm text-slate-600">
-          File CSV (UTF-8) với dòng tiêu đề <code className="rounded bg-slate-100 px-1">email,name,role,password</code>.
+          File CSV (UTF-8) với dòng tiêu đề <code className="rounded bg-slate-100 px-1">{COLUMNS.join(",")}</code>.
+          {" "}<b>username</b> và <b>name</b> bắt buộc ({USERNAME_HINT}); <b>email</b> không bắt buộc;
           {" "}<b>role</b> để trống = <code>user</code>; <b>password</b> để trống = tự sinh (tải về sau khi import).
         </p>
         <div className="flex flex-wrap items-center gap-2">
@@ -144,16 +161,18 @@ export function ImportUsers({ maxRows }: { maxRows: number }) {
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-2">Dòng</th><th className="px-4 py-2">Email</th><th className="px-4 py-2">Tên</th>
-                  <th className="px-4 py-2">Role</th><th className="px-4 py-2">Mật khẩu</th><th className="px-4 py-2">Kiểm tra</th>
+                  <th className="px-4 py-2">Dòng</th><th className="px-4 py-2">Username</th><th className="px-4 py-2">Tên</th>
+                  <th className="px-4 py-2">Email</th><th className="px-4 py-2">Role</th><th className="px-4 py-2">Mật khẩu</th>
+                  <th className="px-4 py-2">Kiểm tra</th>
                 </tr>
               </thead>
               <tbody>
                 {preview.map(({ row, problem }) => (
                   <tr key={row.line} className={`border-0 border-t border-solid border-slate-100 ${problem ? "bg-red-50" : ""}`}>
                     <td className="px-4 py-2 text-slate-500">{row.line}</td>
-                    <td className="px-4 py-2">{row.email}</td>
+                    <td className="px-4 py-2 font-mono">{row.username}</td>
                     <td className="px-4 py-2">{row.name}</td>
+                    <td className="px-4 py-2">{row.email || <span className="text-slate-400">—</span>}</td>
                     <td className="px-4 py-2">{row.role || "user"}</td>
                     <td className="px-4 py-2 text-slate-500">{row.password ? "••••••" : "tự sinh"}</td>
                     <td className="px-4 py-2">{problem ? <span className="text-red-600">{problem}</span> : <Badge tone="emerald">OK</Badge>}</td>
@@ -187,7 +206,7 @@ export function ImportUsers({ maxRows }: { maxRows: number }) {
             .map((x) => (
               <div key={`${x.kind}-${x.line}`} className="text-sm">
                 <Badge tone={x.kind === "Lỗi" ? "red" : "amber"}>{x.kind}</Badge>{" "}
-                dòng {x.line} <b>{x.email}</b>: {x.message}
+                dòng {x.line} <b>{x.username}</b>: {x.message}
               </div>
             ))}
         </Card>

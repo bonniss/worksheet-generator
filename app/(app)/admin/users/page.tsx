@@ -18,7 +18,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
   const page = Math.max(1, Number(searchParams.page) || 1);
 
   const filters: (SQL | undefined)[] = [];
-  if (q) filters.push(or(ilike(users.email, likePattern(q)), ilike(users.name, likePattern(q))));
+  if (q) filters.push(or(ilike(users.username, likePattern(q)), ilike(users.email, likePattern(q)), ilike(users.name, likePattern(q))));
   if (searchParams.role === "admin" || searchParams.role === "user") filters.push(eq(users.role, searchParams.role));
   if (searchParams.status === "active") filters.push(eq(users.isActive, true));
   if (searchParams.status === "locked") filters.push(eq(users.isActive, false));
@@ -27,7 +27,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
   const [rows, [{ total }]] = await Promise.all([
     db
       .select({
-        id: users.id, email: users.email, name: users.name, role: users.role, isActive: users.isActive,
+        id: users.id, username: users.username, email: users.email, name: users.name, role: users.role, isActive: users.isActive,
         createdAt: users.createdAt, worksheetCount: count(worksheets.id),
       })
       .from(users)
@@ -56,7 +56,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
       <Card className="mb-4">
         <form className="flex flex-wrap items-center gap-3">
           <div className="min-w-[200px] flex-1">
-            <Input name="q" placeholder="Tìm theo email hoặc tên..." defaultValue={q} />
+            <Input name="q" placeholder="Tìm theo username, email hoặc tên..." defaultValue={q} />
           </div>
           <Select name="role" defaultValue={searchParams.role ?? ""} className="w-auto">
             <option value="">Mọi vai trò</option>
@@ -92,7 +92,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
               <tr key={u.id} className="border-0 border-t border-solid border-slate-100 hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <div className="font-semibold">{u.name}{u.id === me.id && <span className="ml-1 text-xs font-normal text-slate-500">(bạn)</span>}</div>
-                  <div className="text-xs text-slate-500">{u.email}</div>
+                  <div className="text-xs text-slate-500">@{u.username}{u.email && <> · {u.email}</>}</div>
                 </td>
                 <td className="px-4 py-3">{u.role === "admin" ? <Badge tone="amber">admin</Badge> : <Badge>user</Badge>}</td>
                 <td className="px-4 py-3">{u.isActive ? <Badge tone="emerald">Hoạt động</Badge> : <Badge tone="red">Đã khoá</Badge>}</td>
