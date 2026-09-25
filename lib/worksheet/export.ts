@@ -267,59 +267,61 @@ export async function saveProject(ws: Worksheet, cfg: Cfg, themeOverride: Level 
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export async function printWorksheet(ws: Worksheet | null, cfg: Cfg, theme: Theme, showAnswers: boolean, logo?: string, mascot?: string): Promise<void> {
-  // Chụp NGUYÊN khối worksheet đang render (style nội tuyến đã dính sẵn).
+const escapeHtml = (v: string) => v.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+/**
+ * In / lưu PDF một chạm: dựng bản in (chụp nguyên khối worksheet đang hiển thị) trong iframe ẩn rồi mở
+ * hộp thoại in của trình duyệt ngay — chọn "Lưu dưới dạng PDF" để ra file PDF. Không tải file trung gian.
+ */
+export async function printWorksheet(ws: Worksheet | null, _cfg: Cfg, theme: Theme, showAnswers: boolean): Promise<void> {
   const node = document.getElementById("ws-print-root");
-  let inner = "";
-  if (node) {
-    const clone = node.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll(".ws-noprint").forEach((el) => el.remove());
-    // File in được mở từ máy (không có phiên đăng nhập) → nhúng ảnh trực tiếp vào HTML
-    await inlineImagesInDom(clone);
-    inner = clone.outerHTML;
-  } else {
-    inner = "<div>Không tìm thấy nội dung để in.</div>";
-  }
-  // Ép font-family vào body (vì khối tách khỏi khung cha sẽ mất font thừa kế -> rơi về Times),
-  // giữ đúng width 640px như trên màn hình để ngắt dòng y hệt, và CHỜ font tải xong mới in.
+  if (!node) throw new Error("Không tìm thấy nội dung để in.");
+  const clone = node.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll(".ws-noprint").forEach((el) => el.remove());
+  // Nhúng ảnh trực tiếp để chắc chắn đã có đủ ảnh trước khi mở hộp thoại in
+  await inlineImagesInDom(clone);
+
+  // Tên file PDF mặc định = tiêu đề trang in
+  const title = ((ws && ws.title) || "Worksheet") + (showAnswers ? " - Đáp án" : "");
+  // Ép font-family vào body (khối tách khỏi khung cha sẽ mất font thừa kế → rơi về Times),
+  // giữ đúng width 640px như trên màn hình để ngắt dòng y hệt.
   const bodyFont = theme.body.replace(/"/g, "'");
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${(ws && ws.title) || "worksheet"}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700;800&family=Nunito+Sans:wght@500;700;800&display=swap" rel="stylesheet">
   <style>
     @page { size: A4; margin: 10mm; }
     html, body { margin: 0; padding: 0; background: #fff; }
-    body { font-family: ${bodyFont}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: ${bodyFont}; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     #ws-print-root { width: 640px !important; max-width: 640px !important; margin: 0 auto !important; box-shadow: none !important; }
     .ws-noprint { display: none !important; }
     .ws-section { break-inside: avoid; page-break-inside: avoid; }
-    .ws-print-bar { text-align:center; padding:10px; font-family:${bodyFont}; }
-    @media print { .ws-print-bar { display:none; } }
-    .ws-print-btn { background:${theme.ink}; color:#fff; border:none; border-radius:20px; padding:8px 22px; font-weight:bold; font-size:14px; cursor:pointer; }
-  </style></head>
-  <body>
-    <div class="ws-print-bar">
-      <button class="ws-print-btn" onclick="window.print()">🖨 In / Lưu PDF</button>
-      <span style="color:#888;font-size:12px;margin-left:8px">Nếu hộp thoại in không tự mở, bấm nút này.</span>
-    </div>
-    ${inner}
-    <script>
-      function go(){ try{ window.print(); }catch(e){} }
-      if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(function(){ setTimeout(go, 250); });
-        setTimeout(go, 2500); // dự phòng nếu font treo
-      } else {
-        window.onload = function(){ setTimeout(go, 600); };
-      }
-    <\/script>
-  </body></html>`;
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = ((ws && ws.title) || "worksheet").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_") + (showAnswers ? "_answers" : "") + "_print.html";
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  </style></head><body>${clone.outerHTML}</body></html>`;
+
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  const loaded = new Promise<void>((resolve) => { iframe.onload = () => resolve(); });
+  iframe.srcdoc = html;
+  document.body.appendChild(iframe);
+  try {
+    await loaded;
+    const doc = iframe.contentDocument!;
+    const win = iframe.contentWindow!;
+    // Chờ font + ảnh sẵn sàng (tối đa 4s để không treo nếu mạng chậm)
+    const images = [...doc.images].map((img) => (img.complete ? Promise.resolve() : new Promise<void>((r) => { img.onload = img.onerror = () => r(); })));
+    await Promise.race([Promise.all([doc.fonts?.ready, ...images]), new Promise((r) => setTimeout(r, 4000))]);
+    // Một số trình duyệt lấy tên file PDF từ tiêu đề trang cha → đổi tạm
+    const prevTitle = document.title;
+    document.title = title;
+    try {
+      win.focus();
+      win.print(); // chặn tới khi hộp thoại in đóng (Chrome/Edge/Firefox)
+    } finally {
+      document.title = prevTitle;
+    }
+  } finally {
+    // Safari trả về ngay khi mở hộp thoại → chờ một chút rồi mới gỡ iframe
+    setTimeout(() => iframe.remove(), 1000);
+  }
 }
