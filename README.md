@@ -7,14 +7,17 @@ Có đăng nhập (username hoặc email), phân quyền `admin` / `user`, lưu 
 
 | Module | Ai dùng | Đường dẫn |
 | --- | --- | --- |
-| Tạo / sửa worksheet (AI) | mọi người | `/`, `/worksheets/[id]` |
+| Tạo / sửa worksheet (AI, tự lưu, in PDF) | mọi người | `/`, `/worksheets/[id]` |
 | Quản lý worksheet | admin: toàn hệ thống · user: của mình | `/worksheets` |
 | Hồ sơ cá nhân (đổi tên, đổi mật khẩu) | mọi người | `/profile` |
 | Quản lý tài khoản (tạo, sửa role, khoá, reset mật khẩu, xoá) | admin | `/admin/users` |
 | Import tài khoản từ CSV | admin | `/admin/users/import` |
 | Cấu hình AI (Anthropic API key, model) — đổi lúc chạy, không cần deploy lại | admin | `/admin/settings` |
+| Thư viện chung (worksheet công khai: xem, in, nhân bản) | mọi người | `/library` |
+| Thống kê AI (lượt dùng, token, chi phí, nhật ký từng lượt gọi) + hạn mức | admin | `/admin/usage`, `/admin/settings` |
+| Có gì mới (changelog — sửa `lib/changelog.ts`) | mọi người | `/changelog` |
 
-Không có trang đăng ký công khai — admin tạo hoặc import tài khoản. Admin đầu tiên được tạo bằng `npm run db:seed`.
+Không có trang đăng ký công khai — admin tạo hoặc import tài khoản (người dùng phải đổi mật khẩu ở lần đăng nhập đầu). Admin đầu tiên được tạo bằng `npm run db:seed`.
 
 Mỗi tài khoản có **username** bắt buộc (3–32 ký tự: chữ thường a-z, số, `.` `_` `-`), không đổi được sau khi tạo.
 **Email** không bắt buộc; nếu có thì đăng nhập bằng email cũng được.
@@ -48,6 +51,12 @@ Thứ tự ưu tiên: cấu hình trong app → biến môi trường `ANTHROPIC
 | `npm run db:migrate` | áp migration lên `DATABASE_URL` |
 | `npm run db:seed` | tạo admin từ `ADMIN_*` (nếu username đã có: chỉ đảm bảo role admin, không đổi mật khẩu) |
 | `npm run db:studio` | Drizzle Studio xem dữ liệu |
+
+## Hạn mức & chi phí AI
+
+- Mỗi lượt gọi AI được ghi vào bảng `ai_calls` (model, token vào/ra/cache, thời gian, request id, chi phí ước tính theo `lib/ai-pricing.ts`).
+- Hạn mức mặc định: 20 lượt tạo + 60 lượt gen lại / người / ngày (đổi ở Cấu hình AI, hoặc riêng từng người ở trang chi tiết tài khoản); trần chi phí toàn hệ thống / ngày tuỳ chọn. Admin không bị giới hạn. Ngày tính theo giờ Việt Nam.
+- Token lấy từ response chính thức của Anthropic; chi phí = token × bảng giá công bố (cập nhật `lib/ai-pricing.ts` khi Anthropic đổi giá).
 
 ## Import CSV
 

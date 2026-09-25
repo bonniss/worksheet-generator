@@ -25,7 +25,13 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
           ],
         }]
       : []),
-    { label: "Cá nhân", items: [{ href: "/profile", label: "Hồ sơ cá nhân", icon: "user" }] },
+    {
+      label: "Cá nhân",
+      items: [
+        { href: "/profile", label: "Hồ sơ cá nhân", icon: "user" },
+        { href: "/changelog", label: "Có gì mới", icon: "news", badgeWhenNew: true },
+      ],
+    },
   ];
   return (
     <Sidebar
