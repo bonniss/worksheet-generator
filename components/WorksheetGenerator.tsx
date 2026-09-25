@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- ảnh là data URI (base64) người dùng tải lên, next/image không phù hợp */
-import { useState, useMemo, useRef, type ChangeEvent, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef, type ChangeEvent, type CSSProperties, type ReactNode } from "react";
 import { LOGO_SRC, MASCOT_SRC } from "@/lib/worksheet/assets";
 import type { AiPurpose } from "@/lib/worksheet/ai-purposes";
 import { ApiError, callClaude, type AiCallContext } from "@/lib/worksheet/claude-client";
@@ -956,7 +956,12 @@ function ExerciseEditor({ ex, onSave, onCancel, theme }: { ex: Exercise; onSave:
 /* ================= APP CHÍNH ================= */
 const DEFAULT_CFG: Cfg = { type: "grammar", topic: "", level: "Pre A1", numEx: 3, notes: "", autoMode: true, plan: [] };
 
-type SaveState = "idle" | "saving" | "saved";
+type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
+
+/** Khoá so sánh nội dung — giống lần lưu gần nhất thì không cần lưu lại. */
+const snapshotKey = (ws: Worksheet | null, cfg: Cfg, themeOverride: Level | null) => JSON.stringify([ws, cfg, themeOverride]);
+/** Không lưu khi AI đang viết dở (bài chưa có hoặc đang stream). */
+const isStable = (ws: Worksheet) => !ws.exercises.some((e) => !e || e._streaming);
 
 export interface WorksheetGeneratorProps {
   /** Worksheet đã lưu (mở từ DB) — có thì vào thẳng màn hình worksheet */
@@ -980,10 +985,19 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
   const [editLearn, setEditLearn] = useState(false);
   const [editTitle, setEditTitle] = useState(false);
   const [showAnswers, setShowAnswers] = useState(false);
-  const [printHint, setPrintHint] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [saveHint, setSaveHint] = useState(false);
   const [dbId, setDbId] = useState<string | null>(worksheetId ?? null);
-  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [saveState, setSaveState] = useState<SaveState>(initial ? "saved" : "idle");
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [saveErr, setSaveErr] = useState("");
+  // Refs cho tự lưu: đọc giá trị mới nhất trong callback hẹn giờ mà không phụ thuộc closure cũ
+  const dbIdRef = useRef<string | null>(worksheetId ?? null);
+  const latest = useRef({ ws, cfg, themeOverride });
+  latest.current = { ws, cfg, themeOverride };
+  const lastSavedKey = useRef(initial ? snapshotKey(initial.ws, initial.cfg, initial.themeOverride) : "");
+  const savingRef = useRef(false);
+  const saveAgainRef = useRef(false);
   const openInputRef = useRef<HTMLInputElement>(null);
 
   const theme = THEMES[themeOverride || cfg.level];
@@ -1097,40 +1111,70 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
     setRegenLearn(false);
   }
 
-  /* Lưu vào tài khoản (DB): lần đầu tạo bản ghi mới, các lần sau cập nhật */
-  async function saveToDb() {
-    if (!ws || saveState === "saving") return;
-    setSaveState("saving"); setError("");
+  /**
+   * Lưu vào tài khoản (DB): lần đầu tạo bản ghi, các lần sau cập nhật. Chỉ một request tại một thời điểm —
+   * có thay đổi mới trong lúc đang lưu thì lưu tiếp sau. Đọc dữ liệu từ ref để luôn là bản mới nhất.
+   */
+  const saveNow = useCallback(async () => {
+    const { ws: cur, cfg: curCfg, themeOverride: curTheme } = latest.current;
+    if (!cur || !isStable(cur)) return;
+    if (savingRef.current) { saveAgainRef.current = true; return; }
+    if (dbIdRef.current && snapshotKey(cur, curCfg, curTheme) === lastSavedKey.current) { setSaveState("saved"); return; }
+    savingRef.current = true;
+    setSaveState("saving");
     try {
       // Ảnh mới chèn (data URL) được upload riêng trước, worksheet chỉ lưu đường dẫn → tránh lỗi 413 (quá 4.5MB)
-      const wsToSave = await uploadInlineImages(ws);
-      if (wsToSave !== ws) setWs(wsToSave);
-      const data = buildSavedProject(wsToSave, cfg, themeOverride);
-      const res = await fetch(dbId ? `/api/worksheets/${dbId}` : "/api/worksheets", {
-        method: dbId ? "PUT" : "POST",
+      const wsToSave = await uploadInlineImages(cur);
+      const data = buildSavedProject(wsToSave, curCfg, curTheme);
+      const id = dbIdRef.current;
+      const res = await fetch(id ? `/api/worksheets/${id}` : "/api/worksheets", {
+        method: id ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data }),
       });
       const body: unknown = await res.json().catch(() => null);
       const bodyObj = body && typeof body === "object" ? (body as { id?: unknown; error?: { message?: unknown } }) : {};
       if (!res.ok) {
-        if (res.status === 401) throw new Error("Phiên đăng nhập đã hết hạn. Đăng nhập lại rồi bấm Lưu.");
+        if (res.status === 401) throw new Error("Phiên đăng nhập đã hết hạn. Đăng nhập lại để tiếp tục lưu.");
         const msg = bodyObj.error?.message;
         throw new Error(typeof msg === "string" ? msg : "Máy chủ báo lỗi (" + res.status + ").");
       }
-      if (!dbId) {
+      if (!id) {
         if (typeof bodyObj.id !== "string") throw new Error("Máy chủ không trả về id worksheet.");
+        dbIdRef.current = bodyObj.id;
         setDbId(bodyObj.id);
         // Đổi URL mà không remount trang (giữ nguyên trạng thái đang sửa)
         window.history.replaceState(null, "", "/worksheets/" + bodyObj.id);
       }
-      setSaveState("saved");
-      setTimeout(() => setSaveState((s) => (s === "saved" ? "idle" : s)), 4000);
+      lastSavedKey.current = snapshotKey(wsToSave, curCfg, curTheme);
+      // Thay ảnh data URL bằng đường dẫn đã upload — chỉ khi người dùng chưa sửa gì thêm trong lúc lưu
+      if (wsToSave !== cur) setWs((w) => (w === cur ? wsToSave : w));
+      setSaveState("saved"); setSavedAt(new Date()); setSaveErr("");
     } catch (e) {
-      setSaveState("idle");
-      setError("Chưa lưu được: " + (e instanceof Error ? e.message : String(e)));
+      setSaveState("error");
+      setSaveErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      savingRef.current = false;
+      if (saveAgainRef.current) { saveAgainRef.current = false; void saveNow(); }
     }
-  }
+  }, []);
+
+  // Tự lưu: có thay đổi → chờ 2s không sửa thêm → lưu. Bỏ qua khi đang sinh worksheet.
+  useEffect(() => {
+    if (!ws || loading || !isStable(ws)) return;
+    if (snapshotKey(ws, cfg, themeOverride) === lastSavedKey.current) return;
+    setSaveState((s) => (s === "saving" ? s : "dirty"));
+    const t = window.setTimeout(() => { void saveNow(); }, 2000);
+    return () => window.clearTimeout(t);
+  }, [ws, cfg, themeOverride, loading, saveNow]);
+
+  // Còn thay đổi chưa lưu thì trình duyệt hỏi lại trước khi rời trang
+  useEffect(() => {
+    if (saveState !== "dirty" && saveState !== "saving" && saveState !== "error") return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [saveState]);
 
   /* Nhập file .worksheet.json đã xuất trước đó */
   function onImportFile(e: ChangeEvent<HTMLInputElement>) {
@@ -1144,7 +1188,8 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
         setCfg(d.cfg || cfg);
         setThemeOverride(d.themeOverride || null);
         setWs(d.ws);
-        setDbId(null); // file nhập vào là worksheet mới — lần Lưu tới sẽ tạo bản ghi mới
+        // File nhập vào là worksheet mới → lần tự lưu tới sẽ tạo bản ghi mới
+        setDbId(null); dbIdRef.current = null; lastSavedKey.current = "";
         setError(""); setEditIdx(null); setEditLearn(false); setRegenBox(null);
         setScreen("sheet");
       } catch {
@@ -1324,25 +1369,31 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
         </select>
         <div style={{ flex: 1 }} />
         <ToolBtn theme={theme} onClick={() => setShowAnswers(!showAnswers)}>{showAnswers ? "🙈 Ẩn đáp án" : "✅ Đáp án"}</ToolBtn>
-        <ToolBtn theme={theme} onClick={() => { void saveToDb(); }} disabled={!ws || loading || saveState === "saving"}>
-          {saveState === "saving" ? <><Spinner color={theme.accent} /> Đang lưu</> : saveState === "saved" ? "✅ Đã lưu" : "💾 Lưu"}
-        </ToolBtn>
+        {/* Tự lưu: nút chỉ báo trạng thái; bấm để lưu ngay */}
+        <span title={saveState === "error" ? saveErr : saveState === "saved" ? "Đã tự lưu vào tài khoản" : undefined}>
+          <ToolBtn theme={theme} onClick={() => { void saveNow(); }} disabled={!ws || loading || saveState === "saving" || saveState === "idle"}>
+            {saveState === "saving" ? <><Spinner color={theme.accent} /> Đang lưu</>
+              : saveState === "saved" ? <>✓ Đã lưu{savedAt ? " " + savedAt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : ""}</>
+              : saveState === "error" ? "⚠ Lưu lỗi — thử lại"
+              : saveState === "dirty" ? "● Chưa lưu"
+              : "💾 Lưu"}
+          </ToolBtn>
+        </span>
         <ToolBtn theme={theme} onClick={() => { if (!ws) return; void saveProject(ws, cfg, themeOverride).then(() => { setSaveHint(true); setTimeout(() => setSaveHint(false), 10000); }); }}>⬇️ Xuất file</ToolBtn>
         <ToolBtn theme={theme} onClick={() => openInputRef.current && openInputRef.current.click()}>📂 Nhập file</ToolBtn>
         <input type="file" accept=".json,application/json" ref={openInputRef} style={{ display: "none" }} onChange={onImportFile} />
-        <ToolBtn theme={theme} onClick={() => { void printWorksheet(ws, cfg, theme, showAnswers, LOGO_SRC, MASCOT_SRC).then(() => { setPrintHint(true); setTimeout(() => setPrintHint(false), 12000); }); }}>🖨 In / PDF</ToolBtn>
+        <ToolBtn
+          theme={theme} disabled={!ws || printing}
+          onClick={() => { setPrinting(true); void printWorksheet(ws, cfg, theme, showAnswers).catch((e) => setError("Chưa in được: " + (e instanceof Error ? e.message : String(e)))).finally(() => setPrinting(false)); }}
+        >
+          {printing ? <><Spinner color={theme.accent} /> Đang chuẩn bị</> : "🖨 In / PDF"}
+        </ToolBtn>
         <ToolBtn theme={theme} onClick={() => { if (ws) downloadDoc(ws, cfg, theme, showAnswers); }}>📝 Tải Word</ToolBtn>
       </div>
 
       {saveHint ? (
         <div className="ws-noprint" style={{ maxWidth: 640, margin: "0 auto 12px", background: "#eef4fb", color: "#2a6db0", borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 700, border: "1.5px solid #cfe4f8" }}>
           ⬇️ Đã xuất file <b>.worksheet.json</b> về máy (kèm cả ảnh bạn đã chèn). Lần sau mở tool, bấm <b>📂 Nhập file</b> chọn lại file này là worksheet hiện ra <b>y hệt</b> để sửa và in tiếp.
-        </div>
-      ) : null}
-
-      {printHint ? (
-        <div className="ws-noprint" style={{ maxWidth: 640, margin: "0 auto 12px", background: "#eef7ee", color: "#2e7d4e", borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 700, border: "1.5px solid #cde8d1" }}>
-          ✅ Đã tải file worksheet để in. Mở file <b>..._print.html</b> vừa tải (thường ở góc dưới trình duyệt hoặc thư mục Downloads) — hộp thoại in sẽ tự bật, chọn <b>“Lưu thành PDF”</b> hoặc in ra giấy.
         </div>
       ) : null}
 
