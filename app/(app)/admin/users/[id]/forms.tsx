@@ -13,7 +13,7 @@ export function EditUserForm({ user, isSelf }: { user: EditableUser; isSelf: boo
   const [state, action] = useFormState<FormState, FormData>(updateUser, {});
   const f = state.fields ?? {};
   return (
-    <form action={action} className="space-y-5">
+    <form action={action} className="flex flex-col gap-5">
       {state.error && <Alert>{state.error}</Alert>}
       {state.success && <Alert kind="success">{state.success}</Alert>}
       <div className="grid gap-5 sm:grid-cols-2">
@@ -54,15 +54,17 @@ export function EditUserForm({ user, isSelf }: { user: EditableUser; isSelf: boo
 export function ResetPasswordForm({ id, username }: { id: string; username: string }) {
   const [state, action] = useFormState<FormState, FormData>(resetPassword, {});
   return (
-    <form action={action} className="space-y-4">
+    <form action={action} className="flex flex-col gap-4">
       {state.error && <Alert>{state.error}</Alert>}
       {state.generatedPassword && <PasswordReveal username={username} password={state.generatedPassword} />}
-      <SubmitButton
-        variant="secondary" pendingText="Đang đặt lại..." icon={<KeyRound size={16} />}
-        confirm={`Đặt lại mật khẩu cho @${username}? Người này sẽ bị đăng xuất khỏi mọi thiết bị.`}
-      >
-        Đặt lại mật khẩu
-      </SubmitButton>
+      <div>
+        <SubmitButton
+          variant="secondary" pendingText="Đang đặt lại..." icon={<KeyRound size={16} />}
+          confirm={`Đặt lại mật khẩu cho @${username}? Người này sẽ bị đăng xuất khỏi mọi thiết bị.`}
+        >
+          Đặt lại mật khẩu
+        </SubmitButton>
+      </div>
       <input type="hidden" name="id" value={id} />
     </form>
   );

@@ -7,7 +7,7 @@ import { login, type LoginState } from "./actions";
 export function LoginForm({ next }: { next?: string }) {
   const [state, action] = useFormState<LoginState, FormData>(login, {});
   return (
-    <form action={action} className="space-y-5">
+    <form action={action} className="flex flex-col gap-5">
       {state.error && <Alert>{state.error}</Alert>}
       <Field label="Tên đăng nhập hoặc email">
         <Input

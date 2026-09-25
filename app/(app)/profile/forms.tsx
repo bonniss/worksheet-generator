@@ -8,7 +8,7 @@ import { changePassword, updateProfile, type ProfileState } from "./actions";
 export function ProfileForm({ name }: { name: string }) {
   const [state, action] = useFormState<ProfileState, FormData>(updateProfile, {});
   return (
-    <form action={action} className="space-y-5">
+    <form action={action} className="flex flex-col gap-5">
       {state.success && <Alert kind="success">{state.success}</Alert>}
       <Field label="Họ tên" error={state.fields?.name}>
         <Input name="name" defaultValue={name} required invalid={!!state.fields?.name} />
@@ -28,7 +28,7 @@ export function ChangePasswordForm() {
     if (state.success) formRef.current?.reset();
   }, [state]);
   return (
-    <form ref={formRef} action={action} className="space-y-5">
+    <form ref={formRef} action={action} className="flex flex-col gap-5">
       {state.success && <Alert kind="success">{state.success}</Alert>}
       <Field label="Mật khẩu hiện tại" error={f.currentPassword}>
         <Input name="currentPassword" type="password" autoComplete="current-password" required invalid={!!f.currentPassword} />

@@ -40,7 +40,7 @@ export function ApiKeyForm({ hasDbKey, hasAnyKey }: { hasDbKey: boolean; hasAnyK
   return (
     <div className="space-y-5">
       <Feedback state={shown} />
-      <form ref={formRef} action={action} className="space-y-5">
+      <form ref={formRef} action={action} className="flex flex-col gap-5">
         <Field label={hasAnyKey ? "Thay bằng key mới" : "API key"} hint="Lấy tại console.anthropic.com → API Keys. Key được kiểm tra trước khi lưu.">
           <Input name="apiKey" type="password" autoComplete="off" spellCheck={false} placeholder="sk-ant-api03-..." className="font-mono" required />
         </Field>
@@ -83,7 +83,7 @@ export function ModelForm({
   return (
     <div className="space-y-5">
       <Feedback state={shown} />
-      <form action={action} className="space-y-5">
+      <form action={action} className="flex flex-col gap-5">
         {mode === "list" && models.length > 0 ? (
           <Field
             label="Chọn model"

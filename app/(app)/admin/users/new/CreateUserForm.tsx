@@ -18,7 +18,7 @@ export function CreateUserForm() {
   }, [state]);
 
   return (
-    <form ref={formRef} action={action} className="space-y-5">
+    <form ref={formRef} action={action} className="flex flex-col gap-5">
       {state.error && <Alert>{state.error}</Alert>}
       {state.success && !state.generatedPassword && <Alert kind="success">{state.success}</Alert>}
       {state.generatedPassword && <PasswordReveal username={state.username} password={state.generatedPassword} />}
