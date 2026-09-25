@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useRef } from "react";
 import { useFormState } from "react-dom";
 import { KeyRound } from "lucide-react";
 import { Alert, Checkbox, Field, Input, Select } from "@/components/ui";
@@ -53,14 +54,20 @@ export function EditUserForm({ user, isSelf }: { user: EditableUser; isSelf: boo
 
 export function ResetPasswordForm({ id, username }: { id: string; username: string }) {
   const [state, action] = useFormState<FormState, FormData>(resetPassword, {});
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => { if (state.success) formRef.current?.reset(); }, [state]);
   return (
-    <form action={action} className="flex flex-col gap-4">
+    <form ref={formRef} action={action} className="flex flex-col gap-4">
       {state.error && <Alert>{state.error}</Alert>}
       {state.generatedPassword && <PasswordReveal username={username} password={state.generatedPassword} />}
+      {state.success && !state.generatedPassword && <Alert kind="success">{state.success}</Alert>}
+      <Field label="Mật khẩu mới" optional hint="Để trống để hệ thống tự sinh. Người dùng sẽ phải đổi lại ở lần đăng nhập tới.">
+        <Input name="password" type="text" autoComplete="new-password" minLength={8} className="font-mono sm:w-1/2" />
+      </Field>
       <div>
         <SubmitButton
           variant="secondary" pendingText="Đang đặt lại..." icon={<KeyRound size={16} />}
-          confirm={`Đặt lại mật khẩu cho @${username}? Người này sẽ bị đăng xuất khỏi mọi thiết bị.`}
+          confirm={`Đặt lại mật khẩu cho @${username}? Người này sẽ bị đăng xuất khỏi mọi thiết bị và phải đổi mật khẩu khi đăng nhập lại.`}
         >
           Đặt lại mật khẩu
         </SubmitButton>

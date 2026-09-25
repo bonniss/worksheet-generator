@@ -6,6 +6,7 @@ import { getCurrentUser, type SessionUser } from "./session";
 export async function apiUser(): Promise<{ user: SessionUser; error?: never } | { user?: never; error: NextResponse }> {
   const user = await getCurrentUser();
   if (!user) return { error: jsonError(401, "Chưa đăng nhập") };
+  if (user.mustChangePassword) return { error: jsonError(403, "Cần đổi mật khẩu trước khi tiếp tục. Tải lại trang để đổi mật khẩu.") };
   return { user };
 }
 

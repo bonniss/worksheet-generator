@@ -12,7 +12,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const SESSION_TTL = 30 * DAY;
 const RENEW_BEFORE = 15 * DAY;
 
-export type SessionUser = Pick<User, "id" | "username" | "email" | "name" | "role">;
+export type SessionUser = Pick<User, "id" | "username" | "email" | "name" | "role" | "mustChangePassword">;
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -56,7 +56,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const id = hashToken(token);
   const [row] = await db
     .select({
-      id: users.id, username: users.username, email: users.email, name: users.name, role: users.role,
+      id: users.id, username: users.username, email: users.email, mustChangePassword: users.mustChangePassword, name: users.name, role: users.role,
       isActive: users.isActive, expiresAt: sessions.expiresAt,
     })
     .from(sessions)
@@ -71,13 +71,17 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     await db.update(sessions).set({ expiresAt }).where(eq(sessions.id, id));
     try { setCookie(token, expiresAt); } catch { /* đang render server component */ }
   }
-  return { id: row.id, username: row.username, email: row.email, name: row.name, role: row.role };
+  return { id: row.id, username: row.username, email: row.email, name: row.name, role: row.role, mustChangePassword: row.mustChangePassword };
 });
 
-/** Dùng trong page/layout/server action: chưa đăng nhập → /login. */
-export async function requireUser(): Promise<SessionUser> {
+/**
+ * Dùng trong page/layout/server action: chưa đăng nhập → /login;
+ * mật khẩu do admin đặt chưa được đổi → /change-password (trừ chính trang đó: allowPendingPasswordChange).
+ */
+export async function requireUser(opts?: { allowPendingPasswordChange?: boolean }): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (user.mustChangePassword && !opts?.allowPendingPasswordChange) redirect("/change-password");
   return user;
 }
 

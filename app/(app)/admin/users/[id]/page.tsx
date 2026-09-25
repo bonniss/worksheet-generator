@@ -88,7 +88,7 @@ export default async function EditUserPage({ params }: { params: { id: string } 
         {!isSelf && (
           <>
             <Card>
-              <CardTitle title="Đặt lại mật khẩu" sub="Sinh mật khẩu ngẫu nhiên mới và đăng xuất người dùng khỏi mọi thiết bị." />
+              <CardTitle title="Đặt lại mật khẩu" sub="Dùng khi người dùng quên mật khẩu. Người dùng bị đăng xuất khỏi mọi thiết bị và phải đổi mật khẩu ở lần đăng nhập tới." />
               <ResetPasswordForm id={user.id} username={user.username} />
             </Card>
 
