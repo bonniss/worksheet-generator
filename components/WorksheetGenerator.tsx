@@ -1119,8 +1119,8 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
       fontSize: 15, fontFamily: t.body, boxSizing: "border-box", outline: "none",
     };
     return (
-      <div style={{ minHeight: "calc(100vh - 56px)", background: t.pageBg, fontFamily: t.body, padding: "28px 14px", transition: "background 0.4s" }}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700;800&family=Nunito+Sans:wght@500;700;800&display=swap'); @keyframes wsspin{to{transform:rotate(360deg)}}`}</style>
+      <div style={{ minHeight: "calc(100vh - var(--app-top, 0px))", background: t.pageBg, fontFamily: t.body, padding: "28px 14px", transition: "background 0.4s" }}>
+        <style dangerouslySetInnerHTML={{ __html: `@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700;800&family=Nunito+Sans:wght@500;700;800&display=swap'); @keyframes wsspin{to{transform:rotate(360deg)}}` }} />
         <div style={{ maxWidth: 560, margin: "0 auto", background: "#fff", borderRadius: 28, padding: "26px 26px 30px", boxShadow: "0 10px 40px rgba(0,0,0,0.18)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
             <img src={LOGO_SRC} alt="Flyer" style={{ height: 54 }} />
@@ -1252,8 +1252,8 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
   /* ---------- WORKSHEET SCREEN ---------- */
   let sectionNum = 0;
   return (
-    <div style={{ minHeight: "calc(100vh - 56px)", background: theme.pageBg, fontFamily: theme.body, padding: "18px 10px 60px", transition: "background 0.4s" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700;800&family=Nunito+Sans:wght@500;700;800&display=swap');
+    <div style={{ minHeight: "calc(100vh - var(--app-top, 0px))", background: theme.pageBg, fontFamily: theme.body, padding: "18px 10px 60px", transition: "background 0.4s" }}>
+      <style dangerouslySetInnerHTML={{ __html: `@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700;800&family=Nunito+Sans:wght@500;700;800&display=swap');
         @keyframes wsspin{to{transform:rotate(360deg)}}
         @media print {
           @page { size: A4; margin: 12mm; }
@@ -1263,7 +1263,7 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
           .ws-page { box-shadow: none !important; margin: 0 !important; max-width: 100% !important; border-radius: 0 !important; padding: 0 !important; }
           .ws-section { break-inside: avoid; page-break-inside: avoid; }
         }
-      `}</style>
+      ` }} />
 
       {/* Toolbar */}
       <div className="ws-noprint" style={{

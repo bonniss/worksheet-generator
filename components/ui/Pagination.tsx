@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { buttonClass } from ".";
 
 export function Pagination({
@@ -13,11 +14,20 @@ export function Pagination({
     const s = sp.toString();
     return s ? `?${s}` : "?";
   };
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
   return (
-    <div className="mt-4 flex items-center justify-center gap-2 text-sm">
-      {page > 1 ? <Link href={href(page - 1)} className={buttonClass("secondary", "sm")}>← Trước</Link> : null}
-      <span className="text-slate-600">Trang {page}/{pages}</span>
-      {page < pages ? <Link href={href(page + 1)} className={buttonClass("secondary", "sm")}>Sau →</Link> : null}
+    <div className="flex items-center justify-between gap-3 px-6 py-3 text-[13px] text-zinc-500">
+      <span>{from}–{to} / {total}</span>
+      <div className="flex gap-1">
+        {page > 1
+          ? <Link href={href(page - 1)} className={buttonClass("ghost", "sm")} aria-label="Trang trước"><ChevronLeft size={16} /></Link>
+          : <span className={buttonClass("ghost", "sm") + " pointer-events-none opacity-40"}><ChevronLeft size={16} /></span>}
+        <span className="flex items-center px-2 font-medium text-zinc-700">{page} / {pages}</span>
+        {page < pages
+          ? <Link href={href(page + 1)} className={buttonClass("ghost", "sm")} aria-label="Trang sau"><ChevronRight size={16} /></Link>
+          : <span className={buttonClass("ghost", "sm") + " pointer-events-none opacity-40"}><ChevronRight size={16} /></span>}
+      </div>
     </div>
   );
 }

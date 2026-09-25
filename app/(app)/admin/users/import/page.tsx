@@ -1,5 +1,5 @@
-import Link from "next/link";
-import { PageTitle, buttonClass } from "@/components/ui";
+import { FileDown } from "lucide-react";
+import { Page, PageHeader, buttonClass } from "@/components/ui";
 import { MAX_IMPORT_ROWS } from "@/lib/validators";
 import { ImportUsers } from "./ImportUsers";
 
@@ -9,13 +9,18 @@ export const maxDuration = 60;
 
 export default function ImportUsersPage() {
   return (
-    <main className="app-ui mx-auto max-w-4xl px-4 py-6">
-      <PageTitle
-        title="Import tài khoản từ CSV"
-        sub={`Tối đa ${MAX_IMPORT_ROWS} dòng mỗi lần. Email đã tồn tại sẽ được bỏ qua.`}
-        actions={<Link href="/admin/users" className={buttonClass("ghost")}>← Danh sách</Link>}
+    <Page>
+      <PageHeader
+        back={{ href: "/admin/users", label: "Tài khoản" }}
+        title="Import tài khoản"
+        sub={`Tạo hàng loạt tài khoản từ file CSV — tối đa ${MAX_IMPORT_ROWS} dòng mỗi lần. Username hoặc email đã tồn tại sẽ được bỏ qua.`}
+        actions={
+          <a href="/admin/users/import/template" download className={buttonClass("secondary")}>
+            <FileDown size={16} /> Tải file mẫu
+          </a>
+        }
       />
       <ImportUsers maxRows={MAX_IMPORT_ROWS} />
-    </main>
+    </Page>
   );
 }

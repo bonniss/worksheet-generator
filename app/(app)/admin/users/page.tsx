@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { and, count, desc, eq, ilike, or, type SQL } from "drizzle-orm";
+import { FileDown, Plus, Upload } from "lucide-react";
 import { db } from "@/db";
 import { users, worksheets } from "@/db/schema";
-import { Badge, Card, Input, PageTitle, Select, buttonClass } from "@/components/ui";
+import {
+  Avatar, Badge, Card, EmptyRow, FilterBar, Page, PageHeader, RoleBadge, SearchInput, Select, Td, Th, buttonClass,
+} from "@/components/ui";
 import { Pagination } from "@/components/ui/Pagination";
 import { requireAdmin } from "@/lib/auth/session";
 import { likePattern } from "@/lib/sql";
@@ -39,78 +42,94 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
       .offset((page - 1) * PAGE_SIZE),
     db.select({ total: count() }).from(users).where(where),
   ]);
+  const filtered = !!(q || searchParams.role || searchParams.status);
 
   return (
-    <main className="app-ui mx-auto max-w-6xl px-4 py-6">
-      <PageTitle
-        title="Quản lý tài khoản"
-        sub={`${total} tài khoản`}
+    <Page>
+      <PageHeader
+        title="Tài khoản"
+        sub={`${total} tài khoản${filtered ? " khớp bộ lọc" : ""}`}
         actions={
           <>
-            <Link href="/admin/users/import" className={buttonClass("secondary")}>⬆ Import CSV</Link>
-            <Link href="/admin/users/new" className={buttonClass()}>+ Thêm tài khoản</Link>
+            <a href="/admin/users/import/template" className={buttonClass("ghost")} download>
+              <FileDown size={16} /> File mẫu
+            </a>
+            <Link href="/admin/users/import" className={buttonClass("secondary")}>
+              <Upload size={16} /> Import CSV
+            </Link>
+            <Link href="/admin/users/new" className={buttonClass("primary")}>
+              <Plus size={16} strokeWidth={2.5} /> Thêm tài khoản
+            </Link>
           </>
         }
       />
 
-      <Card className="mb-4">
-        <form className="flex flex-wrap items-center gap-3">
-          <div className="min-w-[200px] flex-1">
-            <Input name="q" placeholder="Tìm theo username, email hoặc tên..." defaultValue={q} />
-          </div>
-          <Select name="role" defaultValue={searchParams.role ?? ""} className="w-auto">
-            <option value="">Mọi vai trò</option>
-            <option value="admin">Admin</option>
-            <option value="user">User</option>
-          </Select>
-          <Select name="status" defaultValue={searchParams.status ?? ""} className="w-auto">
-            <option value="">Mọi trạng thái</option>
-            <option value="active">Đang hoạt động</option>
-            <option value="locked">Đã khoá</option>
-          </Select>
-          <button className={buttonClass("secondary")}>Lọc</button>
-        </form>
-      </Card>
+      <FilterBar>
+        <SearchInput name="q" placeholder="Tìm theo username, email hoặc tên" defaultValue={q} />
+        <Select name="role" defaultValue={searchParams.role ?? ""} className="w-40">
+          <option value="">Mọi vai trò</option>
+          <option value="admin">Admin</option>
+          <option value="user">User</option>
+        </Select>
+        <Select name="status" defaultValue={searchParams.status ?? ""} className="w-44">
+          <option value="">Mọi trạng thái</option>
+          <option value="active">Đang hoạt động</option>
+          <option value="locked">Đã khoá</option>
+        </Select>
+        <button className={buttonClass("ghost")}>Lọc</button>
+        {filtered && <Link href="/admin/users" className="text-[13px] text-zinc-500 hover:text-primary">Xoá lọc</Link>}
+      </FilterBar>
 
-      <Card className="overflow-x-auto p-0">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Tài khoản</th>
-              <th className="px-4 py-3">Vai trò</th>
-              <th className="px-4 py-3">Trạng thái</th>
-              <th className="px-4 py-3">Worksheet</th>
-              <th className="px-4 py-3">Ngày tạo</th>
-              <th className="px-4 py-3 text-right" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">Không có tài khoản phù hợp.</td></tr>
-            )}
-            {rows.map((u) => (
-              <tr key={u.id} className="border-0 border-t border-solid border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3">
-                  <div className="font-semibold">{u.name}{u.id === me.id && <span className="ml-1 text-xs font-normal text-slate-500">(bạn)</span>}</div>
-                  <div className="text-xs text-slate-500">@{u.username}{u.email && <> · {u.email}</>}</div>
-                </td>
-                <td className="px-4 py-3">{u.role === "admin" ? <Badge tone="amber">admin</Badge> : <Badge>user</Badge>}</td>
-                <td className="px-4 py-3">{u.isActive ? <Badge tone="emerald">Hoạt động</Badge> : <Badge tone="red">Đã khoá</Badge>}</td>
-                <td className="px-4 py-3">
-                  {u.worksheetCount > 0
-                    ? <Link href={`/worksheets?owner=${u.id}`} className="text-sky-700 hover:underline">{u.worksheetCount}</Link>
-                    : <span className="text-slate-400">0</span>}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-slate-600">{u.createdAt.toLocaleDateString("vi-VN")}</td>
-                <td className="px-4 py-3 text-right">
-                  <Link href={`/admin/users/${u.id}`} className={buttonClass("secondary", "sm")}>Sửa</Link>
-                </td>
+      <Card flush className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <Th>Tài khoản</Th>
+                <Th>Vai trò</Th>
+                <Th>Trạng thái</Th>
+                <Th className="text-right">Worksheet</Th>
+                <Th>Ngày tạo</Th>
+                <Th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.length === 0 && <EmptyRow colSpan={6}>Không có tài khoản phù hợp.</EmptyRow>}
+              {rows.map((u) => (
+                <tr key={u.id} className="group transition-colors hover:bg-zinc-50">
+                  <Td>
+                    <Link href={`/admin/users/${u.id}`} className="flex items-center gap-3">
+                      <Avatar name={u.name} />
+                      <span className="min-w-0">
+                        <span className="block font-medium text-zinc-900 group-hover:text-primary">
+                          {u.name}
+                          {u.id === me.id && <span className="ml-1.5 text-xs font-normal text-zinc-400">(bạn)</span>}
+                        </span>
+                        <span className="block truncate text-xs text-zinc-500">
+                          <span className="font-mono">@{u.username}</span>
+                          {u.email && <> · {u.email}</>}
+                        </span>
+                      </span>
+                    </Link>
+                  </Td>
+                  <Td><RoleBadge role={u.role} /></Td>
+                  <Td>{u.isActive ? <Badge tone="success" dot>Hoạt động</Badge> : <Badge tone="danger" dot>Đã khoá</Badge>}</Td>
+                  <Td className="text-right tabular-nums">
+                    {u.worksheetCount > 0
+                      ? <Link href={`/worksheets?owner=${u.id}`} className="font-medium text-primary hover:underline">{u.worksheetCount}</Link>
+                      : <span className="text-zinc-400">0</span>}
+                  </Td>
+                  <Td className="whitespace-nowrap text-zinc-500">{u.createdAt.toLocaleDateString("vi-VN")}</Td>
+                  <Td className="text-right">
+                    <Link href={`/admin/users/${u.id}`} className={buttonClass("ghost", "sm")}>Chi tiết</Link>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={page} total={total} pageSize={PAGE_SIZE} searchParams={searchParams} />
       </Card>
-      <Pagination page={page} total={total} pageSize={PAGE_SIZE} searchParams={searchParams} />
-    </main>
+    </Page>
   );
 }

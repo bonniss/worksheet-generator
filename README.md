@@ -47,7 +47,7 @@ Lấy API key tại https://console.anthropic.com → API Keys. Tài khoản c�
 
 ## Import CSV
 
-Dòng đầu là tiêu đề `username,name,email,role,password`. `username` và `name` bắt buộc; `email` tuỳ chọn;
+Tải file mẫu ở trang **Tài khoản → File mẫu** (hoặc `/admin/users/import/template`). Dòng đầu là tiêu đề `username,name,email,role,password`. `username` và `name` bắt buộc; `email` tuỳ chọn;
 `role` trống = `user`; `password` trống = tự sinh.
 Sau khi import có nút tải danh sách tài khoản kèm mật khẩu đã sinh (chỉ tải được ngay lúc đó). Username/email trùng bị bỏ qua. Tối đa 500 dòng/lần.
 

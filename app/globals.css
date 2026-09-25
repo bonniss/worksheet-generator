@@ -2,10 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
-/* preflight đã tắt (xem tailwind.config.ts) — chỉ thêm vài reset tối thiểu cho các trang mới */
-.app-ui, .app-ui * { box-sizing: border-box; }
-.app-ui { font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif; color: #0f172a; }
-.app-ui h1, .app-ui h2, .app-ui h3, .app-ui p { margin: 0; }
-.app-ui button, .app-ui input, .app-ui select, .app-ui textarea { font: inherit; }
-.app-ui a { color: inherit; text-decoration: none; }
-.app-ui table { border-collapse: collapse; }
+/* Chiều cao thanh trên cùng (chỉ có trên mobile) — WorksheetGenerator dùng để tính minHeight */
+:root { --app-top: 56px; }
+@media (min-width: 1024px) { :root { --app-top: 0px; } }
+
+/* preflight đã tắt (xem tailwind.config.ts) — reset tối thiểu cho các trang mới, bọc trong .app-ui.
+   Dùng :where() để độ ưu tiên = 0, không đè class tiện ích của Tailwind. */
+:where(.app-ui), :where(.app-ui) * { box-sizing: border-box; }
+:where(.app-ui) {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #18181b;
+  -webkit-font-smoothing: antialiased;
+}
+:where(.app-ui) :where(h1, h2, h3, p, dl, dd) { margin: 0; }
+:where(.app-ui) :where(button, input, select, textarea) { font: inherit; color: inherit; }
+:where(.app-ui) :where(a) { color: inherit; text-decoration: none; }
+:where(.app-ui) :where(table) { border-collapse: collapse; }
+:where(.app-ui) :where(code) { font-family: var(--font-mono), ui-monospace, monospace; }
+:where(.app-ui) :focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+:where(.app-ui) :where(input, select):focus-visible { outline: none; }
+
+/* Checkbox 16px, 4px radius, tick xanh */
+.app-ui input[type="checkbox"] {
+  appearance: none; margin: 0; flex: none;
+  width: 16px; height: 16px; border-radius: 4px;
+  border: 1.5px solid #d4d4d8; background: #fff; cursor: pointer;
+  display: inline-grid; place-content: center; transition: background-color .12s, border-color .12s;
+}
+.app-ui input[type="checkbox"]::before {
+  content: ""; width: 9px; height: 9px; transform: scale(0); transition: transform .12s;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%); background: #fff;
+}
+.app-ui input[type="checkbox"]:checked { background: #2563eb; border-color: #2563eb; }
+.app-ui input[type="checkbox"]:checked::before { transform: scale(1); }
+.app-ui input[type="checkbox"]:disabled { background: #f4f4f5; border-color: #e4e4e7; cursor: not-allowed; }
+.app-ui input[type="checkbox"]:disabled:checked { background: #a1a1aa; border-color: #a1a1aa; }
+
+/* Mũi tên cho select (appearance: none) */
+:where(.app-ui) :where(select) {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
+}

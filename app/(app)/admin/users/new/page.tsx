@@ -1,16 +1,19 @@
-import Link from "next/link";
-import { Card, PageTitle, buttonClass } from "@/components/ui";
+import { Card, Page, PageHeader } from "@/components/ui";
 import { CreateUserForm } from "./CreateUserForm";
 
 export const metadata = { title: "Thêm tài khoản · Worksheet Generator" };
 
 export default function NewUserPage() {
   return (
-    <main className="app-ui mx-auto max-w-xl px-4 py-6">
-      <PageTitle title="Thêm tài khoản" actions={<Link href="/admin/users" className={buttonClass("ghost")}>← Danh sách</Link>} />
+    <Page width="form">
+      <PageHeader
+        title="Thêm tài khoản"
+        sub="Người dùng đăng nhập bằng username (hoặc email nếu có)."
+        back={{ href: "/admin/users", label: "Tài khoản" }}
+      />
       <Card>
         <CreateUserForm />
       </Card>
-    </main>
+    </Page>
   );
 }
