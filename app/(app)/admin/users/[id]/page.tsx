@@ -9,7 +9,8 @@ import { SubmitButton } from "@/components/ui/SubmitButton";
 import { requireAdmin } from "@/lib/auth/session";
 import { isUuid } from "@/lib/validators";
 import { deleteUser } from "../actions";
-import { EditUserForm, ResetPasswordForm } from "./forms";
+import { formatUsd, userTotals, userUsageToday } from "@/lib/usage";
+import { EditUserForm, ResetPasswordForm, UserLimitsForm } from "./forms";
 
 export const metadata = { title: "Chi tiết tài khoản" };
 
@@ -29,6 +30,8 @@ export default async function EditUserPage({ params }: { params: { id: string } 
   ]);
   if (!user) notFound();
   const isSelf = user.id === me.id;
+  const [usage, totals] = await Promise.all([userUsageToday(user.id), userTotals(user.id, 30)]);
+  const isAdmin = user.role === "admin";
 
   return (
     <Page width="form">
@@ -59,6 +62,27 @@ export default async function EditUserPage({ params }: { params: { id: string } 
         <Card>
           <CardTitle title="Thông tin tài khoản" />
           <EditUserForm user={user} isSelf={isSelf} />
+        </Card>
+
+        <Card>
+          <CardTitle title="Sử dụng AI" sub={isAdmin ? "Admin không bị giới hạn lượt dùng." : "Hạn mức làm mới lúc 0h mỗi ngày."} />
+          <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: "Tạo hôm nay", value: isAdmin ? String(usage.runs) : `${usage.runs} / ${usage.runsPerDay}` },
+              { label: "Gen lại hôm nay", value: isAdmin ? String(usage.regens) : `${usage.regens} / ${usage.regensPerDay}` },
+              { label: "Lượt gọi 30 ngày", value: totals.calls.toLocaleString("vi-VN") },
+              { label: "Chi phí 30 ngày", value: formatUsd(totals.usd) },
+            ].map((t) => (
+              <div key={t.label} className="rounded-lg bg-page px-4 py-3">
+                <div className="text-caption text-zinc-500">{t.label}</div>
+                <div className="mt-0.5 font-display text-lg font-bold text-zinc-900">{t.value}</div>
+              </div>
+            ))}
+          </div>
+          {!isAdmin && (
+            <UserLimitsForm id={user.id} runs={usage.custom.runs} regens={usage.custom.regens} defaults={usage.defaults} />
+          )}
+          <Link href={`/admin/usage?user=${user.id}`} className="mt-4 inline-block text-[13px] font-medium text-primary hover:underline">Xem chi tiết các lượt gọi →</Link>
         </Card>
 
         {!isSelf && (

@@ -62,3 +62,30 @@ export async function resetModel(): Promise<SettingsState> {
   revalidatePath("/admin/settings");
   return { success: "Đã quay về model mặc định." };
 }
+
+/* ===== Hạn mức AI ===== */
+
+const limitsSchema = z.object({
+  runsPerDay: z.coerce.number().int("Phải là số nguyên").min(0).max(1000),
+  regensPerDay: z.coerce.number().int("Phải là số nguyên").min(0).max(5000),
+  // Trống = không giới hạn
+  systemUsdPerDay: z.union([z.literal(""), z.coerce.number().min(0.01, "Tối thiểu $0.01").max(10000)]),
+});
+
+export async function saveLimits(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
+  const me = await requireAdmin();
+  const parsed = limitsSchema.safeParse({
+    runsPerDay: formData.get("runsPerDay"),
+    regensPerDay: formData.get("regensPerDay"),
+    systemUsdPerDay: String(formData.get("systemUsdPerDay") ?? "").trim(),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const { runsPerDay, regensPerDay, systemUsdPerDay } = parsed.data;
+  await setSetting(SETTING_KEYS.runsPerDay, String(runsPerDay), me.id);
+  await setSetting(SETTING_KEYS.regensPerDay, String(regensPerDay), me.id);
+  if (systemUsdPerDay === "") await deleteSetting(SETTING_KEYS.systemUsdPerDay);
+  else await setSetting(SETTING_KEYS.systemUsdPerDay, String(systemUsdPerDay), me.id);
+  revalidatePath("/admin/settings");
+  revalidatePath("/admin/usage");
+  return { success: "Đã lưu hạn mức." };
+}

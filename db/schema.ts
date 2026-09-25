@@ -14,6 +14,9 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: roleEnum("role").notNull().default("user"),
   isActive: boolean("is_active").notNull().default(true),
+  // Hạn mức AI riêng (null = dùng mặc định hệ thống trong app_settings)
+  aiRunsPerDay: integer("ai_runs_per_day"),
+  aiRegensPerDay: integer("ai_regens_per_day"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
