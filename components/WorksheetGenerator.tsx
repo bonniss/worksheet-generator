@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, type ChangeEvent, type CSSProperties, type R
 import { LOGO_SRC, MASCOT_SRC } from "@/lib/worksheet/assets";
 import { ApiError, callClaude } from "@/lib/worksheet/claude-client";
 import { buildSavedProject, downloadDoc, printWorksheet, saveProject } from "@/lib/worksheet/export";
+import { uploadInlineImages } from "@/lib/worksheet/images";
 import { buildExercisePrompt, buildLearnPrompt, buildStructurePrompt } from "@/lib/worksheet/prompts";
 import {
   AGE_BY_LEVEL, LEVELS, STAGE_VI, THEMES, TYPE_META, stagesForLevel, syncPlan, typesForStage,
@@ -175,9 +176,10 @@ function ImageUpload({ img, onChange, theme, label }: { img?: string | null; onC
           const ctx = canvas.getContext("2d");
           if (!ctx) throw new Error("no 2d context");
           ctx.drawImage(im, 0, 0, w, h);
-          // PNG nếu có alpha (giữ trong suốt), JPEG nếu ảnh nền (nhẹ hơn nhiều)
+          // Ảnh có thể có nền trong suốt → WebP (giữ trong suốt, nhẹ hơn PNG nhiều lần; trình duyệt không hỗ trợ
+          // xuất WebP sẽ trả PNG). Ảnh chụp/ảnh nền → JPEG.
           const hasAlpha = /image\/(png|gif|webp)/.test(file.type);
-          const out = hasAlpha ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.85);
+          const out = hasAlpha ? canvas.toDataURL("image/webp", 0.9) : canvas.toDataURL("image/jpeg", 0.85);
           onChange(out);
         } catch {
           onChange(reader.result as string); // dự phòng: dùng ảnh gốc nếu nén lỗi
@@ -1061,7 +1063,10 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
     if (!ws || saveState === "saving") return;
     setSaveState("saving"); setError("");
     try {
-      const data = buildSavedProject(ws, cfg, themeOverride);
+      // Ảnh mới chèn (data URL) được upload riêng trước, worksheet chỉ lưu đường dẫn → tránh lỗi 413 (quá 4.5MB)
+      const wsToSave = await uploadInlineImages(ws);
+      if (wsToSave !== ws) setWs(wsToSave);
+      const data = buildSavedProject(wsToSave, cfg, themeOverride);
       const res = await fetch(dbId ? `/api/worksheets/${dbId}` : "/api/worksheets", {
         method: dbId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -1283,10 +1288,10 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
         <ToolBtn theme={theme} onClick={() => { void saveToDb(); }} disabled={!ws || loading || saveState === "saving"}>
           {saveState === "saving" ? <><Spinner color={theme.accent} /> Đang lưu</> : saveState === "saved" ? "✅ Đã lưu" : "💾 Lưu"}
         </ToolBtn>
-        <ToolBtn theme={theme} onClick={() => { if (!ws) return; saveProject(ws, cfg, themeOverride); setSaveHint(true); setTimeout(() => setSaveHint(false), 10000); }}>⬇️ Xuất file</ToolBtn>
+        <ToolBtn theme={theme} onClick={() => { if (!ws) return; void saveProject(ws, cfg, themeOverride).then(() => { setSaveHint(true); setTimeout(() => setSaveHint(false), 10000); }); }}>⬇️ Xuất file</ToolBtn>
         <ToolBtn theme={theme} onClick={() => openInputRef.current && openInputRef.current.click()}>📂 Nhập file</ToolBtn>
         <input type="file" accept=".json,application/json" ref={openInputRef} style={{ display: "none" }} onChange={onImportFile} />
-        <ToolBtn theme={theme} onClick={() => { printWorksheet(ws, cfg, theme, showAnswers, LOGO_SRC, MASCOT_SRC); setPrintHint(true); setTimeout(() => setPrintHint(false), 12000); }}>🖨 In / PDF</ToolBtn>
+        <ToolBtn theme={theme} onClick={() => { void printWorksheet(ws, cfg, theme, showAnswers, LOGO_SRC, MASCOT_SRC).then(() => { setPrintHint(true); setTimeout(() => setPrintHint(false), 12000); }); }}>🖨 In / PDF</ToolBtn>
         <ToolBtn theme={theme} onClick={() => { if (ws) downloadDoc(ws, cfg, theme, showAnswers); }}>📝 Tải Word</ToolBtn>
       </div>
 
