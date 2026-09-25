@@ -29,6 +29,16 @@ export const TYPE_RULES = `Các type cho phép và quy ước JSON. Với dạng
   KHÔNG dùng options; KHÔNG cần prompt/answer cho dạng này.
 - "writing": prompt là đề bài viết ngắn, options rỗng, answer là sample answer.`;
 
+/**
+ * System prompt dùng chung cho MỌI lượt gọi (server gắn vào, có cache_control) — phần cố định nên đặt trước
+ * để các lượt trong cùng worksheet dùng lại cache. Phần riêng từng lượt nằm ở user message (build*Prompt).
+ */
+export const SYSTEM_PROMPT = `Bạn là chuyên gia soạn worksheet tiếng Anh cho học sinh Việt Nam theo khung CEFR, làm việc theo framework: Alignment → Scope (đúng level) → Progression (Awareness → Controlled → Semi-controlled → Production).
+Luôn trả về DUY NHẤT một JSON compact hợp lệ theo đúng shape được yêu cầu trong từng lượt — không markdown, không giải thích, PHẢI đóng đủ ngoặc.
+
+QUY ƯỚC TYPE BÀI TẬP (áp dụng khi soạn bài tập):
+${TYPE_RULES}`;
+
 // BƯỚC 1a: chỉ lấy khung worksheet (title, brief, kế hoạch các bài) — output ngắn
 export function buildStructurePrompt(cfg: Cfg): string {
   const manual = !cfg.autoMode && cfg.plan && cfg.plan.length;
@@ -108,7 +118,7 @@ NGUYÊN TẮC NGỮ CẢNH & LẶP LẠI:
 - Giữ CHUNG chủ đề rộng và vùng từ vựng với cả worksheet (đó là điều nên làm).
 - Ràng buộc chỉ ở tầng CÂU VÍ DỤ/NHÂN VẬT CỤ THỂ: ${repeatRule}
 
-${TYPE_RULES}
+Dạng bài và shape JSON: theo QUY ƯỚC TYPE BÀI TẬP (system).
 
 Quy tắc item: mỗi câu chỉ 1 mục tiêu; chỉ 1 đáp án đúng duy nhất, không ambiguous; distractor sai nhưng "có lý"; câu tự nhiên như người bản xứ nói; từ vựng ≤ ${cfg.level}.
 QUY TẮC INSTRUCTION: viết bằng tiếng Anh, TỐI ĐA 2 câu ngắn, rõ, 1 nghĩa, dễ hơn bản thân bài tập. Số ít/nhiều phải khớp thực tế (nhiều câu → "sentences", nhiều tranh → "pictures", nhiều chỗ trống → "blanks"). KHÔNG lặp lại yêu cầu đã nêu ở instruction xuống từng câu (vd đã nói "rewrite in passive" thì KHÔNG thêm "(passive)" sau mỗi câu). Chỉ để gợi ý trong ngoặc ở từng câu khi nó thêm dữ kiện MỚI (từ khác nhau mỗi câu).

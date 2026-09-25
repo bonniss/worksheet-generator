@@ -35,7 +35,9 @@ export function parseLoose(text: string): unknown {
   catch { return JSON.parse(repairJson(core)); }
 }
 
-export type ApiErrorKind = "network" | "rate_limit" | "overloaded" | "auth" | "server" | "empty";
+import type { AiPurpose } from "./ai-purposes";
+
+export type ApiErrorKind = "network" | "rate_limit" | "overloaded" | "auth" | "server" | "empty" | "quota";
 
 // Lỗi có kèm nhãn để phân biệt: lỗi máy chủ/hạn mức (không phải do nội dung dài)
 export class ApiError extends Error {
@@ -49,60 +51,116 @@ export class ApiError extends Error {
   }
 }
 
-interface AnthropicResponse {
-  type?: string;
-  error?: { message?: string };
-  content?: { type: string; text?: string }[];
+/** Ngữ cảnh của một lượt gọi — server dùng để ghi nhật ký và tính hạn mức. */
+export type AiCallContext = {
+  purpose: AiPurpose;
+  runId: string;
+  worksheetId?: string | null;
+  meta?: { level?: string; type?: string };
+};
+
+type ErrorBody = { type?: string; error?: { type?: string; message?: string } };
+
+function toApiError(status: number, body: ErrorBody | null): ApiError {
+  const msg = body?.error?.message || "";
+  const type = body?.error?.type || "";
+  if (type === "quota_exceeded") return new ApiError(msg || "Đã hết lượt dùng AI hôm nay.", "quota", false);
+  if (status === 429 || /rate.?limit|usage limit/i.test(msg)) {
+    return new ApiError("Tài khoản AI đang chạm giới hạn tốc độ (rate limit). Chờ ít phút rồi thử lại.", "rate_limit", true);
+  }
+  if (status === 529 || status === 503 || /overload/i.test(msg) || type === "overloaded_error") {
+    return new ApiError("Máy chủ AI đang quá tải. Chờ một lát rồi bấm Thử lại.", "overloaded", true);
+  }
+  if (status === 401 || status === 403) {
+    return new ApiError(msg || "Không có quyền gọi AI (phiên đăng nhập có thể đã hết hạn). Tải lại trang rồi thử lại.", "auth", false);
+  }
+  return new ApiError("Máy chủ báo lỗi" + (status ? " (" + status + ")" : "") + (msg ? ": " + msg.slice(0, 160) : "") + ".", "server", status >= 500);
 }
 
-export async function callClaudeRaw(prompt: string): Promise<string> {
+export type RawResult = { text: string; stop: string | null };
+
+/**
+ * Gọi /api/claude và đọc stream NDJSON: {"t":"d","x":"..."} từng đoạn chữ, {"t":"done",...} khi xong,
+ * {"t":"error",...} nếu lỗi giữa chừng. `onText` nhận toàn bộ chữ đã có (throttle ~250ms).
+ */
+export async function callClaudeRaw(prompt: string, ctx: AiCallContext, onText?: (text: string) => void): Promise<RawResult> {
   let res: Response;
   try {
     res = await fetch("/api/claude", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messages: [{ role: "user", content: prompt }],
-      }),
+      body: JSON.stringify({ prompt, ...ctx }),
     });
   } catch {
     throw new ApiError("Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.", "network", true);
   }
 
-  let data: AnthropicResponse | null = null;
-  try { data = (await res.json()) as AnthropicResponse; } catch { data = null; }
-
-  // Máy chủ trả lỗi -> báo đúng nguyên nhân thay vì đổ cho "nội dung dài"
-  if (!res.ok || (data && data.type === "error")) {
-    const msg = (data && data.error && data.error.message) || "";
-    const status = res.status;
-    if (status === 429 || /rate.?limit|quota|usage limit/i.test(msg)) {
-      throw new ApiError("Tài khoản đã chạm giới hạn sử dụng (rate limit). Chờ ít phút rồi thử lại, hoặc dùng tài khoản khác.", "rate_limit", true);
-    }
-    if (status === 529 || status === 503 || /overload/i.test(msg)) {
-      throw new ApiError("Máy chủ đang quá tải. Chờ một lát rồi bấm Thử lại.", "overloaded", true);
-    }
-    if (status === 401 || status === 403) {
-      throw new ApiError("Không có quyền gọi AI (phiên đăng nhập có thể đã hết hạn). Tải lại trang rồi thử lại.", "auth", false);
-    }
-    throw new ApiError("Máy chủ báo lỗi" + (status ? " (" + status + ")" : "") + (msg ? ": " + msg.slice(0, 120) : "") + ".", "server", status >= 500);
+  // Lỗi trước khi stream bắt đầu → JSON lỗi
+  if (!res.ok || !res.body) {
+    const body = (await res.json().catch(() => null)) as ErrorBody | null;
+    throw toApiError(res.status, body);
   }
 
-  const text = (data && data.content ? data.content : []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("\n");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let text = "";
+  let stop: string | null = null;
+  let lastEmit = 0;
+  const handle = (line: string) => {
+    if (!line.trim()) return;
+    const ev = JSON.parse(line) as { t: string; x?: string; stop?: string; status?: number; message?: string };
+    if (ev.t === "d" && ev.x) {
+      text += ev.x;
+      const now = Date.now();
+      if (onText && now - lastEmit > 250) { lastEmit = now; onText(text); }
+    } else if (ev.t === "done") {
+      stop = ev.stop ?? null;
+    } else if (ev.t === "error") {
+      throw toApiError(ev.status ?? 500, { error: { message: ev.message } });
+    }
+  };
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        handle(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
+    }
+    handle(buf);
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    throw new ApiError("Mất kết nối trong lúc AI đang viết. Bấm Thử lại nhé.", "network", true);
+  }
+  if (onText) onText(text);
   if (!text.trim()) throw new ApiError("Máy chủ trả về nội dung rỗng. Bấm Thử lại nhé.", "empty", true);
-  return text;
+  return { text, stop };
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/** Gọi Claude và parse JSON trả về. T là shape mong đợi (không được kiểm tra lúc chạy). */
-export async function callClaude<T>(prompt: string): Promise<T> {
+/** Thử dựng JSON từ chữ đang stream dở (đóng nốt ngoặc) — trả undefined nếu chưa dựng được. */
+function tryPartial(text: string): unknown {
+  if (text.indexOf("{") < 0) return undefined;
+  try { return parseLoose(text); } catch { return undefined; }
+}
+
+/**
+ * Gọi Claude và parse JSON trả về. T là shape mong đợi (không được kiểm tra lúc chạy).
+ * `onPartial` nhận object dựng từ phần đã stream (để hiện dần nội dung).
+ */
+export async function callClaude<T>(prompt: string, ctx: AiCallContext, onPartial?: (partial: T) => void): Promise<T> {
+  const onText = onPartial ? (t: string) => { const p = tryPartial(t); if (p) onPartial(p as T); } : undefined;
   // Lỗi máy chủ/hạn mức: chờ rồi thử lại (tối đa 2 lần), KHÔNG đổi prompt.
-  // Lỗi JSON hỏng: thử lại 1 lần kèm nhắc trả JSON đầy đủ.
+  // Lỗi JSON hỏng (kể cả bị cắt vì chạm max_tokens): thử lại 1 lần kèm nhắc trả JSON đầy đủ.
   let lastApiErr: ApiError | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return parseLoose(await callClaudeRaw(prompt)) as T;
+      return parseLoose((await callClaudeRaw(prompt, ctx, onText)).text) as T;
     } catch (e) {
       if (e instanceof ApiError) {
         lastApiErr = e;
@@ -110,10 +168,9 @@ export async function callClaude<T>(prompt: string): Promise<T> {
         await sleep(1200 * (attempt + 1)); // giãn cách tăng dần
         continue;
       }
-      // JSON hỏng -> thử lại một lần với lời nhắc rõ hơn
       try {
         const retryPrompt = prompt + "\n\nLƯU Ý QUAN TRỌNG: chỉ trả JSON HỢP LỆ, ĐẦY ĐỦ (đóng đủ ngoặc), KHÔNG markdown, KHÔNG cắt giữa chừng. Nếu nội dung dài, rút gọn cho vừa nhưng phải đóng đủ JSON.";
-        return parseLoose(await callClaudeRaw(retryPrompt)) as T;
+        return parseLoose((await callClaudeRaw(retryPrompt, ctx, onText)).text) as T;
       } catch (e2) {
         if (e2 instanceof ApiError) { lastApiErr = e2; if (!e2.retryable || attempt === 2) throw e2; await sleep(1200 * (attempt + 1)); continue; }
         throw e2;

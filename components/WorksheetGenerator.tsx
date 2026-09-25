@@ -2,7 +2,8 @@
 /* eslint-disable @next/next/no-img-element -- ảnh là data URI (base64) người dùng tải lên, next/image không phù hợp */
 import { useState, useMemo, useRef, type ChangeEvent, type CSSProperties, type ReactNode } from "react";
 import { LOGO_SRC, MASCOT_SRC } from "@/lib/worksheet/assets";
-import { ApiError, callClaude } from "@/lib/worksheet/claude-client";
+import type { AiPurpose } from "@/lib/worksheet/ai-purposes";
+import { ApiError, callClaude, type AiCallContext } from "@/lib/worksheet/claude-client";
 import { buildSavedProject, downloadDoc, printWorksheet, saveProject } from "@/lib/worksheet/export";
 import { uploadInlineImages } from "@/lib/worksheet/images";
 import { buildExercisePrompt, buildLearnPrompt, buildStructurePrompt } from "@/lib/worksheet/prompts";
@@ -11,10 +12,28 @@ import {
 } from "@/lib/worksheet/themes";
 import {
   isSavedProject,
-  type Cfg, type Exercise, type GrammarBlock, type Item, type Learn, type Level, type RuleBlock,
+  type Cfg, type Exercise, type ExercisePlan, type GrammarBlock, type Item, type Learn, type Level, type RuleBlock,
   type SavedProject, type Stage, type StructurePlan, type TableBlock, type Theme, type VocabItem, type Worksheet,
 } from "@/lib/worksheet/types";
 import { cleanOpt, grammarBlocks, makeFiller, shuffle, tableToText, textToTable, type Filler } from "@/lib/worksheet/utils";
+
+/**
+ * Bài tập dựng từ JSON đang stream dở: chỉ giữ các câu đã viết xong (câu cuối có thể còn dở nên bỏ),
+ * đánh dấu _streaming. Trả null nếu chưa đủ dữ liệu để hiển thị an toàn.
+ */
+function partialExercise(p: unknown, planRow: ExercisePlan): Exercise | null {
+  if (!p || typeof p !== "object") return null;
+  const d = p as Partial<Exercise>;
+  if (!Array.isArray(d.items)) return null;
+  if (planRow.type === "transform_table" && !Array.isArray(d.columns)) return null;
+  const items = d.items.slice(0, -1).filter((it) => it && typeof it === "object");
+  return {
+    ...planRow, ...d,
+    instruction: typeof d.instruction === "string" ? d.instruction : "",
+    items,
+    _streaming: true,
+  } as Exercise;
+}
 
 function Spinner({ color }: { color: string }) {
   return (
@@ -981,13 +1000,19 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
     return p ? `[${p.title}: ${p.items.slice(0, 3).map(itemSummary).join("; ")}]` : "";
   };
 
+  /** Ngữ cảnh gửi kèm mỗi lượt gọi AI (server ghi nhật ký + tính hạn mức theo runId). */
+  const aiCtx = (purpose: AiPurpose, runId: string): AiCallContext => ({
+    purpose, runId, worksheetId: dbId, meta: { level: cfg.level, type: cfg.type },
+  });
+
   async function generateAll() {
     if (!cfg.topic.trim()) { setError("Hãy nhập chủ điểm trước nhé."); return; }
     setError(""); setLoading(true); setWs(null); setScreen("sheet");
+    const runId = crypto.randomUUID();
     let planOk = false;
     try {
       setLoadMsg("Đang lập khung worksheet...");
-      const plan = await callClaude<StructurePlan>(buildStructurePrompt(cfg));
+      const plan = await callClaude<StructurePlan>(buildStructurePrompt(cfg), aiCtx("structure", runId));
       planOk = true;
       const base: Worksheet = { title: plan.title, brief: plan.brief, learn: null, exercises: plan.plan.map(() => null) };
       setWs({ ...base });
@@ -995,7 +1020,10 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
       // Phần Learn gọi RIÊNG để output mỗi lần không vượt giới hạn độ dài
       setLoadMsg("Đang soạn phần " + THEMES[cfg.level].learnTitle + "...");
       try {
-        base.learn = await callClaude<Learn>(buildLearnPrompt(cfg, plan));
+        base.learn = await callClaude<Learn>(buildLearnPrompt(cfg, plan), aiCtx("learn", runId), (p) => {
+          const n = Array.isArray(p?.vocab) ? p.vocab.length : 0;
+          if (n) setLoadMsg(`Đang soạn phần ${THEMES[cfg.level].learnTitle}... (${n} từ)`);
+        });
       } catch (eL) {
         if (eL instanceof ApiError) throw eL;
         base.learn = null; // Learn lỗi thì vẫn tiếp tục các bài tập
@@ -1007,7 +1035,15 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
       for (let i = 0; i < plan.plan.length; i++) {
         setLoadMsg(`Đang soạn bài ${i + 1}/${plan.plan.length} (${plan.plan[i].stage})...`);
         try {
-          exs[i] = await callClaude<Exercise>(buildExercisePrompt(cfg, base, plan.plan[i], summaries(exs, i), i, prevSum(exs, i)));
+          exs[i] = await callClaude<Exercise>(
+            buildExercisePrompt(cfg, base, plan.plan[i], summaries(exs, i), i, prevSum(exs, i)),
+            aiCtx("exercise", runId),
+            // Hiện dần các câu đã viết xong trong lúc AI còn đang viết
+            (p) => {
+              const partial = partialExercise(p, plan.plan[i]);
+              if (partial) { const cur = [...exs]; cur[i] = partial; setWs({ ...base, exercises: cur }); }
+            },
+          );
         } catch (e2) {
           if (e2 instanceof ApiError) throw e2; // lỗi máy chủ -> dừng, báo đúng nguyên nhân
           exs[i] = { ...plan.plan[i], instruction: "", items: [], _failed: true };
@@ -1039,10 +1075,13 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
       let extra = "\nLưu ý: tạo NỘI DUNG MỚI, khác hẳn các câu sau: " + ex.items.map(itemSummary).join("; ");
       if (instruction && instruction.trim())
         extra += "\nYÊU CẦU RIÊNG CỦA GIÁO VIÊN (bắt buộc tuân theo): " + instruction.trim();
-      const fresh = await callClaude<Exercise>(buildExercisePrompt(cfg, ws, plan, summaries(ws.exercises, i), i, prevSum(ws.exercises, i)) + extra);
+      const fresh = await callClaude<Exercise>(
+        buildExercisePrompt(cfg, ws, plan, summaries(ws.exercises, i), i, prevSum(ws.exercises, i)) + extra,
+        aiCtx("regen_exercise", crypto.randomUUID()),
+      );
       const exs = [...ws.exercises]; exs[i] = fresh;
       setWs({ ...ws, exercises: exs });
-    } catch { setError("Regen bài " + (i + 1) + " lỗi, thử lại nhé."); }
+    } catch (e) { setError(e instanceof ApiError ? e.message : "Regen bài " + (i + 1) + " lỗi, thử lại nhé."); }
     setRegenIdx(null);
   }
 
@@ -1050,7 +1089,7 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
     if (!ws) return;
     setRegenLearn(true); setError(""); setRegenBox(null);
     try {
-      const learn = await callClaude<Learn>(buildLearnPrompt(cfg, ws, instruction));
+      const learn = await callClaude<Learn>(buildLearnPrompt(cfg, ws, instruction), aiCtx("regen_learn", crypto.randomUUID()));
       setWs({ ...ws, learn });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Gen lại phần " + theme.learnTitle + " chưa được, thử lại nhé.");
@@ -1458,7 +1497,7 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
               {ex ? (
                 <>
                   <SectionHeader num={++sectionNum} title={ex.title} sub={ex.instruction} theme={theme}
-                    right={
+                    right={ex._streaming ? undefined :
                       <span style={{ display: "flex", gap: 6 }}>
                         <span className="ws-noprint" style={{ fontSize: 10.5, fontWeight: 800, color: "#9aa9b8", alignSelf: "center", textTransform: "uppercase" }}>{ex.stage}</span>
                         <ToolBtn theme={theme} onClick={() => { setEditIdx(editIdx === i ? null : i); setRegenBox(null); }}>✏️ Sửa</ToolBtn>
@@ -1480,7 +1519,14 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
                       Bài này chưa tạo được (nội dung dài hoặc lỗi tạm thời). Bấm 🔄 Gen lại ở trên để thử lại.
                     </div>
                   ) : (
-                    <ExerciseItems ex={ex} theme={theme} showAnswers={showAnswers} />
+                    <>
+                      <ExerciseItems ex={ex} theme={theme} showAnswers={showAnswers} />
+                      {ex._streaming && (
+                        <div className="ws-noprint" style={{ textAlign: "center", color: theme.accent, fontWeight: 700, padding: "8px 0 2px", fontSize: 13 }}>
+                          <Spinner color={theme.accent} /> &nbsp;Đang viết tiếp{ex.items.length ? ` (đã xong ${ex.items.length} câu)` : ""}...
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               ) : (

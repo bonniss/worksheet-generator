@@ -1,4 +1,4 @@
-import { boolean, customType, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, customType, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import type { SavedProject } from "@/lib/worksheet/types";
 
 export const roleEnum = pgEnum("role", ["admin", "user"]);
@@ -74,6 +74,42 @@ export const worksheetImages = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("worksheet_images_owner_id_idx").on(t.ownerId)],
+);
+
+// Nhật ký từng lượt gọi AI (qua /api/claude): thông số kỹ thuật + usage + chi phí ước tính.
+// `run_id` gom các lượt thuộc cùng một lần bấm "Tạo worksheet" / "Gen lại".
+export const aiCalls = pgTable(
+  "ai_calls",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    runId: uuid("run_id"),
+    purpose: text("purpose").notNull(), // structure | learn | exercise | regen_exercise | regen_learn
+    worksheetId: uuid("worksheet_id").references(() => worksheets.id, { onDelete: "set null" }),
+    level: text("level"),
+    type: text("type"),
+    model: text("model").notNull(),
+    maxTokens: integer("max_tokens").notNull(),
+    promptChars: integer("prompt_chars").notNull(),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    cacheReadTokens: integer("cache_read_tokens"),
+    cacheWriteTokens: integer("cache_write_tokens"),
+    stopReason: text("stop_reason"),
+    durationMs: integer("duration_ms"),
+    ttftMs: integer("ttft_ms"), // time to first token
+    status: text("status").notNull(), // ok | error | blocked
+    errorType: text("error_type"),
+    httpStatus: integer("http_status"),
+    requestId: text("request_id"),
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("ai_calls_user_created_idx").on(t.userId, t.createdAt),
+    index("ai_calls_created_idx").on(t.createdAt),
+    index("ai_calls_run_idx").on(t.runId),
+  ],
 );
 
 export type User = typeof users.$inferSelect;
