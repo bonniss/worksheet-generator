@@ -3,7 +3,7 @@ import { Page, PageHeader, buttonClass } from "@/components/ui";
 import { MAX_IMPORT_ROWS } from "@/lib/validators";
 import { ImportUsers } from "./ImportUsers";
 
-export const metadata = { title: "Import tài khoản · Worksheet Generator" };
+export const metadata = { title: "Import tài khoản" };
 // Hash mật khẩu cho nhiều dòng có thể mất vài chục giây
 export const maxDuration = 60;
 

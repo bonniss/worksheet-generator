@@ -10,7 +10,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { requireAdmin } from "@/lib/auth/session";
 import { likePattern } from "@/lib/sql";
 
-export const metadata = { title: "Tài khoản · Worksheet Generator" };
+export const metadata = { title: "Tài khoản" };
 
 const PAGE_SIZE = 25;
 type Search = { q?: string; role?: string; status?: string; page?: string };

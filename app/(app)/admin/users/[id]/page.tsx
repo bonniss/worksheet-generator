@@ -11,7 +11,7 @@ import { isUuid } from "@/lib/validators";
 import { deleteUser } from "../actions";
 import { EditUserForm, ResetPasswordForm } from "./forms";
 
-export const metadata = { title: "Chi tiết tài khoản · Worksheet Generator" };
+export const metadata = { title: "Chi tiết tài khoản" };
 
 export default async function EditUserPage({ params }: { params: { id: string } }) {
   const me = await requireAdmin();

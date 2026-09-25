@@ -7,8 +7,9 @@ const body = Inter({ subsets: ["latin", "vietnamese"], variable: "--font-body" }
 const mono = Fira_Code({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: "Worksheet Generator",
-  description: "Tạo worksheet tiếng Anh theo trình độ CEFR",
+  title: { default: "Worksheet Genie", template: "%s · Worksheet Genie" },
+  description: "Tạo worksheet tiếng Anh theo trình độ CEFR với AI",
+  applicationName: "Worksheet Genie",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

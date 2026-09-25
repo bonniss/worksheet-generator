@@ -1,7 +1,7 @@
 import { Card, Page, PageHeader } from "@/components/ui";
 import { CreateUserForm } from "./CreateUserForm";
 
-export const metadata = { title: "Thêm tài khoản · Worksheet Generator" };
+export const metadata = { title: "Thêm tài khoản" };
 
 export default function NewUserPage() {
   return (

@@ -5,7 +5,7 @@ import { Avatar, Card, CardTitle, Field, Input, Page, PageHeader, RoleBadge } fr
 import { requireUser } from "@/lib/auth/session";
 import { ChangePasswordForm, ProfileForm } from "./forms";
 
-export const metadata = { title: "Hồ sơ · Worksheet Generator" };
+export const metadata = { title: "Hồ sơ" };
 
 export default async function ProfilePage() {
   const user = await requireUser();

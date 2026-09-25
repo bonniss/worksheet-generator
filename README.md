@@ -1,4 +1,4 @@
-# Worksheet Generator
+# Worksheet Genie
 
 Ứng dụng Next.js (TypeScript) tạo worksheet tiếng Anh theo trình độ CEFR (Pre A1 → C2), dùng Claude qua Anthropic API.
 Có đăng nhập (username hoặc email), phân quyền `admin` / `user`, lưu worksheet vào Neon Postgres.
