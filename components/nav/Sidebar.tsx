@@ -2,10 +2,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { FileStack, LogOut, Menu, Sparkles, Upload, User, Users, X } from "lucide-react";
+import { FileStack, LogOut, Menu, Settings2, Sparkles, Upload, User, Users, X } from "lucide-react";
 import { Avatar, RoleBadge, cx } from "@/components/ui";
 
-const ICONS = { sparkles: Sparkles, files: FileStack, users: Users, upload: Upload, user: User };
+const ICONS = { sparkles: Sparkles, files: FileStack, users: Users, upload: Upload, user: User, settings: Settings2 };
 
 export type NavItem = { href: string; label: string; icon: keyof typeof ICONS; exact?: boolean };
 export type NavSection = { label: string; items: NavItem[] };

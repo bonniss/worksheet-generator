@@ -46,5 +46,13 @@ export const worksheets = pgTable(
   (t) => [index("worksheets_owner_id_idx").on(t.ownerId), index("worksheets_updated_at_idx").on(t.updatedAt)],
 );
 
+// Cấu hình hệ thống dạng key/value (model AI, API key đã mã hoá...) — đổi được lúc chạy, không cần deploy lại
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+});
+
 export type User = typeof users.$inferSelect;
 export type Worksheet = typeof worksheets.$inferSelect;

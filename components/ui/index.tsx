@@ -45,12 +45,24 @@ export function Card({ children, className, flush }: { children: ReactNode; clas
   );
 }
 
-export function CardTitle({ title, sub, tone }: { title: string; sub?: ReactNode; tone?: "danger" }) {
+export function CardTitle({ title, sub, tone, icon }: { title: string; sub?: ReactNode; tone?: "danger"; icon?: ReactNode }) {
   return (
-    <div className="mb-5">
-      <h2 className={cx("font-display text-base font-semibold", tone === "danger" ? "text-danger" : "text-zinc-900")}>{title}</h2>
-      {sub && <p className="mt-1 text-sm text-zinc-500">{sub}</p>}
+    <div className="mb-5 flex items-start gap-3">
+      {icon}
+      <div className="min-w-0 flex-1">
+        <h2 className={cx("font-display text-base font-semibold", tone === "danger" ? "text-danger" : "text-zinc-900")}>{title}</h2>
+        {sub && <p className="mt-1 text-sm text-zinc-500">{sub}</p>}
+      </div>
     </div>
+  );
+}
+
+/** Ô icon vuông 36px dùng cạnh tiêu đề card. */
+export function IconTile({ children, tone = "primary" }: { children: ReactNode; tone?: "primary" | "accent" }) {
+  return (
+    <span className={cx("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", tone === "primary" ? "bg-primary-soft text-primary" : "bg-accent-soft text-accent")}>
+      {children}
+    </span>
   );
 }
 

@@ -17,6 +17,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
           items: [
             { href: "/admin/users", label: "Tài khoản", icon: "users" as const, exact: true },
             { href: "/admin/users/import", label: "Import tài khoản", icon: "upload" as const },
+            { href: "/admin/settings", label: "Cấu hình AI", icon: "settings" as const },
           ],
         }]
       : []),
