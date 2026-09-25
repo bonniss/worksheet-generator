@@ -188,12 +188,15 @@ export function ImportUsers({ maxRows }: { maxRows: number }) {
               </div>
               <div className="flex gap-2">
                 <Button type="button" variant="ghost" onClick={reset} disabled={pending}>Chọn file khác</Button>
-                <Button type="button" onClick={submit} disabled={pending || problems === preview.length}>
-                  {pending ? "Đang import..." : `Import ${preview.length - problems} tài khoản`}
+                <Button type="button" onClick={submit} loading={pending} disabled={problems === preview.length}>
+                  {pending ? `Đang import ${preview.length - problems} tài khoản...` : `Import ${preview.length - problems} tài khoản`}
                 </Button>
               </div>
             </div>
-            <div className="max-h-[480px] overflow-auto border-0 border-t border-solid border-zinc-100">
+            <div
+              aria-busy={pending || undefined}
+              className={cx("max-h-[480px] overflow-auto border-0 border-t border-solid border-zinc-100 transition-opacity", pending && "pointer-events-none opacity-50")}
+            >
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-white">
                   <tr><Th className="w-14">Dòng</Th><Th>Username</Th><Th>Họ tên</Th><Th>Email</Th><Th>Role</Th><Th>Mật khẩu</Th><Th>Kiểm tra</Th></tr>

@@ -8,6 +8,7 @@ import {
 import { LogoMark, PRODUCT_NAME } from "@/components/brand/Logo";
 import { Avatar, RoleBadge, cx } from "@/components/ui";
 import { SIDEBAR_COOKIE } from "./constants";
+import { startNavigationProgress } from "./progress-events";
 
 const ICONS = { sparkles: Sparkles, files: FileStack, users: Users, upload: Upload, user: User, settings: Settings2 };
 
@@ -112,7 +113,7 @@ export function Sidebar({ sections, user, logoutAction, initialCollapsed, childr
   );
 
   const logoutButton = (c: boolean) => (
-    <form action={logoutAction}>
+    <form action={logoutAction} onSubmit={() => startNavigationProgress()}>
       <button
         aria-label="Đăng xuất"
         title={c ? undefined : "Đăng xuất"}

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Info, Search, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Info, Loader2, Search, XCircle } from "lucide-react";
 import type {
   ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TdHTMLAttributes, ThHTMLAttributes,
 } from "react";
@@ -66,6 +66,28 @@ export function IconTile({ children, tone = "primary" }: { children: ReactNode; 
   );
 }
 
+/* ---------- Loading ---------- */
+
+const SPINNER_PX = { sm: 13, md: 15, lg: 17, xl: 24 } as const;
+export type SpinnerSize = keyof typeof SPINNER_PX;
+
+/** Spinner cỡ theo ngữ cảnh: sm/md/lg khớp nút cùng cỡ, xl cho khối nội dung đang tải. */
+export function Spinner({ size = "md", label, className }: { size?: SpinnerSize; label?: string; className?: string }) {
+  const icon = <Loader2 size={SPINNER_PX[size]} className={cx("shrink-0 animate-spin", className)} aria-hidden="true" />;
+  if (!label) return icon;
+  return (
+    <span role="status" className="inline-flex items-center gap-2">
+      {icon}
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+/** Khối giữ chỗ khi đang tải. */
+export function Skeleton({ className }: { className?: string }) {
+  return <span aria-hidden="true" className={cx("block rounded-md bg-zinc-200/70 animate-pulse motion-reduce:animate-none", className)} />;
+}
+
 /* ---------- Buttons ---------- */
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
@@ -91,9 +113,15 @@ export const buttonClass = (variant: Variant = "primary", size: Size = "md") =>
   );
 
 export function Button({
-  variant = "primary", size = "md", className, ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
-  return <button {...props} className={cx(buttonClass(variant, size), className)} />;
+  variant = "primary", size = "md", className, loading, icon, disabled, children, ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size; loading?: boolean; icon?: ReactNode }) {
+  // Đang chạy: spinner thay chỗ icon, nút khoá nhưng không mờ đi (vẫn đọc được chữ)
+  return (
+    <button {...props} disabled={disabled || loading} aria-busy={loading || undefined} className={cx(buttonClass(variant, size), loading && "!opacity-100", className)}>
+      {loading ? <Spinner size={size} /> : icon}
+      {children}
+    </button>
+  );
 }
 
 /* ---------- Form fields ---------- */
@@ -229,8 +257,4 @@ export function EmptyRow({ colSpan, children }: { colSpan: number; children: Rea
       <td colSpan={colSpan} className="px-6 py-14 text-center text-sm text-zinc-500">{children}</td>
     </tr>
   );
-}
-
-export function FilterBar({ children }: { children: ReactNode }) {
-  return <form className="mb-4 flex flex-wrap items-center gap-2">{children}</form>;
 }

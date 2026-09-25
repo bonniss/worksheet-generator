@@ -14,15 +14,22 @@ function Feedback({ state }: { state: SettingsState }) {
   return null;
 }
 
-/** Chạy server action không cần form (xoá, kiểm tra), gom kết quả vào cùng một chỗ hiển thị. */
+/** Chạy server action không cần form (xoá, kiểm tra), gom kết quả vào cùng một chỗ hiển thị.
+ *  `running` cho biết action nào đang chạy để chỉ nút đó hiện spinner. */
 function useAction() {
   const [state, setState] = useState<SettingsState>({});
+  const [running, setRunning] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  const run = (fn: () => Promise<SettingsState>, confirmText?: string) => {
+  const run = (name: string, fn: () => Promise<SettingsState>, confirmText?: string) => {
     if (confirmText && !window.confirm(confirmText)) return;
-    start(async () => setState(await fn()));
+    setRunning(name);
+    start(async () => {
+      setState(await fn());
+      setRunning(null);
+    });
   };
-  return { state, setState, pending, run };
+  const is = (name: string) => pending && running === name;
+  return { state, setState, pending, run, is };
 }
 
 export function ApiKeyForm({ hasDbKey, hasAnyKey }: { hasDbKey: boolean; hasAnyKey: boolean }) {
@@ -47,16 +54,20 @@ export function ApiKeyForm({ hasDbKey, hasAnyKey }: { hasDbKey: boolean; hasAnyK
         <div className="flex flex-wrap items-center justify-between gap-2 border-0 border-t border-solid border-zinc-100 pt-5">
           <div className="flex flex-wrap gap-1">
             {hasAnyKey && (
-              <Button type="button" variant="ghost" disabled={extra.pending} onClick={() => extra.run(testApiKey)}>
-                <PlugZap size={16} /> Kiểm tra kết nối
+              <Button
+                type="button" variant="ghost" icon={<PlugZap size={16} />}
+                loading={extra.is("test")} disabled={extra.pending} onClick={() => extra.run("test", testApiKey)}
+              >
+                {extra.is("test") ? "Đang kiểm tra..." : "Kiểm tra kết nối"}
               </Button>
             )}
             {hasDbKey && (
               <Button
-                type="button" variant="ghost" className="text-danger hover:bg-danger-soft hover:text-danger" disabled={extra.pending}
-                onClick={() => extra.run(clearApiKey, "Xoá key đã cấu hình? Hệ thống sẽ quay về key mặc định (nếu có).")}
+                type="button" variant="ghost" className="text-danger hover:bg-danger-soft hover:text-danger" icon={<Trash2 size={16} />}
+                loading={extra.is("clear")} disabled={extra.pending}
+                onClick={() => extra.run("clear", clearApiKey, "Xoá key đã cấu hình? Hệ thống sẽ quay về key mặc định (nếu có).")}
               >
-                <Trash2 size={16} /> Xoá key
+                {extra.is("clear") ? "Đang xoá..." : "Xoá key"}
               </Button>
             )}
           </div>
@@ -108,8 +119,12 @@ export function ModelForm({
         <div className="flex flex-wrap items-center justify-between gap-2 border-0 border-t border-solid border-zinc-100 pt-5">
           <div>
             {hasDbModel && (
-              <Button type="button" variant="ghost" disabled={extra.pending} onClick={() => extra.run(resetModel, `Quay về model mặc định của hệ thống (${fallbackModel})?`)}>
-                <RotateCcw size={16} /> Dùng mặc định
+              <Button
+                type="button" variant="ghost" icon={<RotateCcw size={16} />}
+                loading={extra.is("reset")} disabled={extra.pending}
+                onClick={() => extra.run("reset", resetModel, `Quay về model mặc định của hệ thống (${fallbackModel})?`)}
+              >
+                {extra.is("reset") ? "Đang đổi..." : "Dùng mặc định"}
               </Button>
             )}
           </div>
