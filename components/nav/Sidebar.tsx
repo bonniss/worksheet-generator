@@ -3,16 +3,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
-  BarChart3, FileStack, Library, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings2, Sparkles, Upload, User, Users, X,
+  BarChart3, FileStack, Library, LogOut, Megaphone, Menu, PanelLeftClose, PanelLeftOpen, Settings2, Sparkles, Upload, User, Users, X,
 } from "lucide-react";
 import { LogoMark, PRODUCT_NAME } from "@/components/brand/Logo";
 import { Avatar, RoleBadge, cx } from "@/components/ui";
+import { CHANGELOG_SEEN_KEY, LATEST_VERSION } from "@/lib/changelog";
 import { SIDEBAR_COOKIE } from "./constants";
 import { startNavigationProgress } from "./progress-events";
 
-const ICONS = { sparkles: Sparkles, files: FileStack, users: Users, upload: Upload, user: User, settings: Settings2, chart: BarChart3, library: Library };
+const ICONS = { sparkles: Sparkles, files: FileStack, users: Users, upload: Upload, user: User, settings: Settings2, chart: BarChart3, library: Library, news: Megaphone };
 
-export type NavItem = { href: string; label: string; icon: keyof typeof ICONS; exact?: boolean };
+export type NavItem = {
+  href: string; label: string; icon: keyof typeof ICONS; exact?: boolean;
+  /** Hiện chấm "mới" khi có bản changelog chưa xem */
+  badgeWhenNew?: boolean;
+};
 export type NavSection = { label: string; items: NavItem[] };
 
 type Props = {
@@ -46,6 +51,17 @@ export function Sidebar({ sections, user, logoutAction, initialCollapsed, childr
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  // Có bản changelog chưa xem (đọc từ trình duyệt sau khi mount để không lệch với HTML server)
+  const [hasNews, setHasNews] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      try { setHasNews(localStorage.getItem(CHANGELOG_SEEN_KEY) !== LATEST_VERSION); } catch { setHasNews(false); }
+    };
+    check();
+    window.addEventListener("changelog-seen", check);
+    window.addEventListener("storage", check);
+    return () => { window.removeEventListener("changelog-seen", check); window.removeEventListener("storage", check); };
+  }, []);
 
   // Đóng menu mobile khi chuyển trang
   useEffect(() => setOpen(false), [pathname]);
@@ -99,7 +115,12 @@ export function Sidebar({ sections, user, logoutAction, initialCollapsed, childr
                     )}
                   >
                     {active && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-primary" />}
-                    <Icon size={18} strokeWidth={active ? 2.25 : 1.75} className="shrink-0" />
+                    <span className="relative flex shrink-0">
+                      <Icon size={18} strokeWidth={active ? 2.25 : 1.75} />
+                      {item.badgeWhenNew && hasNews && (
+                        <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-white" aria-label="Có cập nhật mới" />
+                      )}
+                    </span>
                     {!c && item.label}
                     <Tip show={c}>{item.label}</Tip>
                   </Link>
