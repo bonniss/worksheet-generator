@@ -11,6 +11,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
       items: [
         { href: "/", label: "Tạo worksheet", icon: "sparkles", exact: true },
         { href: "/worksheets", label: user.role === "admin" ? "Tất cả worksheet" : "Worksheet của tôi", icon: "files" },
+        { href: "/library", label: "Thư viện chung", icon: "library" },
       ],
     },
     ...(user.role === "admin"
