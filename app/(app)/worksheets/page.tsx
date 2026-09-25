@@ -4,8 +4,9 @@ import { Copy, Plus, Trash2 } from "lucide-react";
 import { db } from "@/db";
 import { users, worksheets } from "@/db/schema";
 import {
-  Badge, Card, EmptyRow, FilterBar, Page, PageHeader, SearchInput, Select, Td, Th, buttonClass,
+  Badge, Card, EmptyRow, Page, PageHeader, SearchInput, Select, Td, Th, buttonClass,
 } from "@/components/ui";
+import { FilterBar } from "@/components/ui/FilterBar";
 import { Pagination } from "@/components/ui/Pagination";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { requireUser } from "@/lib/auth/session";
@@ -60,7 +61,7 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
         actions={<Link href="/" className={buttonClass()}><Plus size={16} strokeWidth={2.5} /> Tạo worksheet</Link>}
       />
 
-      <FilterBar>
+      <FilterBar filtered={filtered}>
         <SearchInput name="q" placeholder="Tìm theo tiêu đề hoặc chủ điểm" defaultValue={q} />
         <Select name="level" defaultValue={searchParams.level ?? ""} className="w-40">
           <option value="">Mọi trình độ</option>
@@ -72,8 +73,6 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
             {owners.map((o) => <option key={o.id} value={o.id}>{o.name} (@{o.username})</option>)}
           </Select>
         )}
-        <button className={buttonClass("ghost")}>Lọc</button>
-        {filtered && <Link href="/worksheets" className="text-[13px] text-zinc-500 hover:text-primary">Xoá lọc</Link>}
       </FilterBar>
 
       <Card flush className="overflow-hidden">

@@ -4,8 +4,9 @@ import { FileDown, Plus, Upload } from "lucide-react";
 import { db } from "@/db";
 import { users, worksheets } from "@/db/schema";
 import {
-  Avatar, Badge, Card, EmptyRow, FilterBar, Page, PageHeader, RoleBadge, SearchInput, Select, Td, Th, buttonClass,
+  Avatar, Badge, Card, EmptyRow, Page, PageHeader, RoleBadge, SearchInput, Select, Td, Th, buttonClass,
 } from "@/components/ui";
+import { FilterBar } from "@/components/ui/FilterBar";
 import { Pagination } from "@/components/ui/Pagination";
 import { requireAdmin } from "@/lib/auth/session";
 import { likePattern } from "@/lib/sql";
@@ -64,7 +65,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
         }
       />
 
-      <FilterBar>
+      <FilterBar filtered={filtered}>
         <SearchInput name="q" placeholder="Tìm theo username, email hoặc tên" defaultValue={q} />
         <Select name="role" defaultValue={searchParams.role ?? ""} className="w-40">
           <option value="">Mọi vai trò</option>
@@ -76,8 +77,6 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
           <option value="active">Đang hoạt động</option>
           <option value="locked">Đã khoá</option>
         </Select>
-        <button className={buttonClass("ghost")}>Lọc</button>
-        {filtered && <Link href="/admin/users" className="text-[13px] text-zinc-500 hover:text-primary">Xoá lọc</Link>}
       </FilterBar>
 
       <Card flush className="overflow-hidden">

@@ -77,7 +77,7 @@ export default async function EditUserPage({ params }: { params: { id: string } 
               <form action={deleteUser}>
                 <input type="hidden" name="id" value={user.id} />
                 <SubmitButton
-                  variant="danger" pendingText="Đang xoá..." icon={<Trash2 size={16} />}
+                  variant="danger" pendingText="Đang xoá..." icon={<Trash2 size={16} />} navigates
                   confirm={`Xoá vĩnh viễn @${user.username} và ${n} worksheet?`}
                 >
                   Xoá tài khoản

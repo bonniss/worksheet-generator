@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Fira_Code, Inter, Plus_Jakarta_Sans } from "next/font/google";
+import { NavigationProgress } from "@/components/nav/NavigationProgress";
 import "./globals.css";
 
 const display = Plus_Jakarta_Sans({ subsets: ["latin", "vietnamese"], weight: ["600", "700", "800"], variable: "--font-display" });
@@ -15,7 +16,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="vi" className={`${display.variable} ${body.variable} ${mono.variable}`}>
-      <body style={{ margin: 0, background: "#FAFAFA" }}>{children}</body>
+      <body style={{ margin: 0, background: "#FAFAFA" }}>
+        <NavigationProgress />
+        {children}
+      </body>
     </html>
   );
 }

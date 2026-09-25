@@ -18,7 +18,7 @@ export function LoginForm({ next }: { next?: string }) {
       <Field label="Mật khẩu">
         <Input name="password" type="password" autoComplete="current-password" required />
       </Field>
-      <SubmitButton size="lg" className="w-full" pendingText="Đang đăng nhập...">Đăng nhập</SubmitButton>
+      <SubmitButton size="lg" className="w-full" pendingText="Đang đăng nhập..." navigates>Đăng nhập</SubmitButton>
       <input type="hidden" name="next" value={next ?? ""} />
     </form>
   );

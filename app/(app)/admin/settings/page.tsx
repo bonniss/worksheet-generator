@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { Cpu, KeyRound } from "lucide-react";
-import { Alert, Badge, Card, CardTitle, IconTile, Page, PageHeader } from "@/components/ui";
+import { Alert, Badge, Card, CardTitle, IconTile, Page, PageHeader, Skeleton, Spinner } from "@/components/ui";
+import { FieldSkeleton } from "@/components/ui/skeletons";
 import { listModels, type ModelOption } from "@/lib/anthropic";
 import { requireAdmin } from "@/lib/auth/session";
 import { DEFAULT_MODEL, getAiSettingsView, type Source } from "@/lib/settings";
@@ -37,20 +39,44 @@ function Current({ value, source, meta }: {
   );
 }
 
+type ModelPickerProps = { apiKey: string | null; current: string; fallbackModel: string; hasDbModel: boolean };
+
+/** Gọi Models API (có thể mất vài giây) — tách riêng + Suspense để phần còn lại của trang hiện ngay. */
+async function ModelPicker({ apiKey, ...rest }: ModelPickerProps) {
+  let models: ModelOption[] = [];
+  let failed = false;
+  if (apiKey) {
+    try {
+      models = await listModels(apiKey);
+    } catch {
+      failed = true;
+    }
+  }
+  return (
+    <>
+      {failed && <div className="mb-5"><Alert kind="warning">Không tải được danh sách model. Có thể nhập model id thủ công.</Alert></div>}
+      <ModelForm models={models} {...rest} />
+    </>
+  );
+}
+
+function ModelPickerFallback() {
+  return (
+    <div>
+      <FieldSkeleton />
+      <div className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
+        <Spinner size="sm" /> Đang tải danh sách model...
+      </div>
+      <div className="mt-5 flex justify-end border-0 border-t border-solid border-zinc-100 pt-5">
+        <Skeleton className="h-[38px] w-32 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
 export default async function SettingsPage() {
   await requireAdmin();
   const { config, view } = await getAiSettingsView();
-
-  // Danh sách model lấy trực tiếp từ Models API bằng key hiện hành
-  let models: ModelOption[] = [];
-  let modelsError = false;
-  if (config.apiKey) {
-    try {
-      models = await listModels(config.apiKey);
-    } catch {
-      modelsError = true;
-    }
-  }
 
   return (
     <Page>
@@ -75,13 +101,14 @@ export default async function SettingsPage() {
           <CardTitle icon={<IconTile tone="accent"><Cpu size={18} /></IconTile>} title="Model" sub="Dùng để sinh worksheet." />
           <Current value={<code className="text-sm text-zinc-900">{view.model}</code>} source={view.modelSource} meta={view.modelMeta} />
           {!config.apiKey && <div className="mb-5"><Alert kind="info">Thiết lập API key trước để chọn model từ danh sách.</Alert></div>}
-          {modelsError && <div className="mb-5"><Alert kind="warning">Không tải được danh sách model. Có thể nhập model id thủ công.</Alert></div>}
-          <ModelForm
-            current={view.model}
-            models={models}
-            fallbackModel={view.envModel || DEFAULT_MODEL}
-            hasDbModel={view.modelSource === "db"}
-          />
+          <Suspense fallback={<ModelPickerFallback />}>
+            <ModelPicker
+              apiKey={config.apiKey}
+              current={view.model}
+              fallbackModel={view.envModel || DEFAULT_MODEL}
+              hasDbModel={view.modelSource === "db"}
+            />
+          </Suspense>
         </Card>
       </div>
     </Page>
