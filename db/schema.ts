@@ -1,4 +1,4 @@
-import { boolean, index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, customType, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import type { SavedProject } from "@/lib/worksheet/types";
 
 export const roleEnum = pgEnum("role", ["admin", "user"]);
@@ -53,6 +53,28 @@ export const appSettings = pgTable("app_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
 });
+
+const bytea = customType<{ data: Buffer; driverData: Buffer | string }>({
+  dataType: () => "bytea",
+  // neon-http trả bytea dạng chuỗi hex "\x..."
+  fromDriver: (v) => (Buffer.isBuffer(v) ? v : Buffer.from(String(v).replace(/^\\x/, ""), "hex")),
+  toDriver: (v) => v,
+});
+
+// Ảnh chèn vào worksheet: lưu riêng (mỗi ảnh một request) để payload worksheet không vượt giới hạn 4.5MB của Vercel.
+// Worksheet chỉ giữ đường dẫn /api/images/<id>.
+export const worksheetImages = pgTable(
+  "worksheet_images",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    bytes: bytea("bytes").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("worksheet_images_owner_id_idx").on(t.ownerId)],
+);
 
 export type User = typeof users.$inferSelect;
 export type Worksheet = typeof worksheets.$inferSelect;

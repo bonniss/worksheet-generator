@@ -1,4 +1,5 @@
 import type { Cfg, Exercise, Item, Learn, Level, SavedProject, Theme, Worksheet } from "./types";
+import { inlineImagesInDom, inlineRemoteImages } from "./images";
 import { cleanOpt, esc, grammarBlocks } from "./utils";
 
 // markup **đậm** *nghiêng* ==tô sáng== và ___ -> gạch chân, cho Word
@@ -254,8 +255,9 @@ export function buildSavedProject(ws: Worksheet, cfg: Cfg, themeOverride: Level 
   return { _type: "flyer-worksheet", version: 1, savedAt: new Date().toISOString(), cfg, themeOverride, ws };
 }
 
-export function saveProject(ws: Worksheet, cfg: Cfg, themeOverride: Level | null): void {
-  const data = buildSavedProject(ws, cfg, themeOverride);
+export async function saveProject(ws: Worksheet, cfg: Cfg, themeOverride: Level | null): Promise<void> {
+  // Nhúng ảnh đã lưu trên server vào file để "Nhập file" ở nơi khác vẫn có ảnh
+  const data = buildSavedProject(await inlineRemoteImages(ws), cfg, themeOverride);
   const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -265,13 +267,15 @@ export function saveProject(ws: Worksheet, cfg: Cfg, themeOverride: Level | null
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function printWorksheet(ws: Worksheet | null, cfg: Cfg, theme: Theme, showAnswers: boolean, logo?: string, mascot?: string): void {
+export async function printWorksheet(ws: Worksheet | null, cfg: Cfg, theme: Theme, showAnswers: boolean, logo?: string, mascot?: string): Promise<void> {
   // Chụp NGUYÊN khối worksheet đang render (style nội tuyến đã dính sẵn).
   const node = document.getElementById("ws-print-root");
   let inner = "";
   if (node) {
     const clone = node.cloneNode(true) as HTMLElement;
     clone.querySelectorAll(".ws-noprint").forEach((el) => el.remove());
+    // File in được mở từ máy (không có phiên đăng nhập) → nhúng ảnh trực tiếp vào HTML
+    await inlineImagesInDom(clone);
     inner = clone.outerHTML;
   } else {
     inner = "<div>Không tìm thấy nội dung để in.</div>";
