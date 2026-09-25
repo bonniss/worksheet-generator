@@ -9,7 +9,6 @@ export function LoginForm({ next }: { next?: string }) {
   return (
     <form action={action} className="space-y-5">
       {state.error && <Alert>{state.error}</Alert>}
-      <input type="hidden" name="next" value={next ?? ""} />
       <Field label="Tên đăng nhập hoặc email">
         <Input
           name="identifier" autoComplete="username" autoCapitalize="none" spellCheck={false} required autoFocus
@@ -20,6 +19,7 @@ export function LoginForm({ next }: { next?: string }) {
         <Input name="password" type="password" autoComplete="current-password" required />
       </Field>
       <SubmitButton size="lg" className="w-full" pendingText="Đang đăng nhập...">Đăng nhập</SubmitButton>
+      <input type="hidden" name="next" value={next ?? ""} />
     </form>
   );
 }

@@ -13,7 +13,7 @@ import { likePattern } from "@/lib/sql";
 import { isUuid } from "@/lib/validators";
 import { deleteWorksheet, duplicateWorksheet } from "./actions";
 
-export const metadata = { title: "Worksheet · Worksheet Generator" };
+export const metadata = { title: "Worksheet" };
 
 const PAGE_SIZE = 20;
 const LEVELS = ["Pre A1", "A1", "A2", "B1", "B2", "C1", "C2"];

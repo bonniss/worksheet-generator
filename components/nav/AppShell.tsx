@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import { logout } from "@/app/auth-actions";
 import type { SessionUser } from "@/lib/auth/session";
+import { SIDEBAR_COOKIE } from "./constants";
 import { Sidebar, type NavSection } from "./Sidebar";
 
 export function AppShell({ user, children }: { user: SessionUser; children: React.ReactNode }) {
@@ -28,6 +30,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
       sections={sections}
       user={{ name: user.name, username: user.username, role: user.role }}
       logoutAction={logout}
+      initialCollapsed={cookies().get(SIDEBAR_COOKIE)?.value === "collapsed"}
     >
       {children}
     </Sidebar>

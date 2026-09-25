@@ -25,7 +25,7 @@ function useAction() {
   return { state, setState, pending, run };
 }
 
-export function ApiKeyForm({ hasDbKey, envHasKey, hasAnyKey }: { hasDbKey: boolean; envHasKey: boolean; hasAnyKey: boolean }) {
+export function ApiKeyForm({ hasDbKey, hasAnyKey }: { hasDbKey: boolean; hasAnyKey: boolean }) {
   const [formState, action] = useFormState<SettingsState, FormData>(saveApiKey, {});
   const extra = useAction();
   const formRef = useRef<HTMLFormElement>(null);
@@ -54,11 +54,9 @@ export function ApiKeyForm({ hasDbKey, envHasKey, hasAnyKey }: { hasDbKey: boole
             {hasDbKey && (
               <Button
                 type="button" variant="ghost" className="text-danger hover:bg-danger-soft hover:text-danger" disabled={extra.pending}
-                onClick={() => extra.run(clearApiKey, envHasKey
-                  ? "Xoá key trong app? Hệ thống sẽ quay về dùng ANTHROPIC_API_KEY từ biến môi trường."
-                  : "Xoá key? Chức năng tạo worksheet sẽ ngừng hoạt động cho đến khi có key mới.")}
+                onClick={() => extra.run(clearApiKey, "Xoá key đã cấu hình? Hệ thống sẽ quay về key mặc định (nếu có).")}
               >
-                <Trash2 size={16} /> Xoá key trong app
+                <Trash2 size={16} /> Xoá key
               </Button>
             )}
           </div>
@@ -89,7 +87,7 @@ export function ModelForm({
         {mode === "list" && models.length > 0 ? (
           <Field
             label="Chọn model"
-            hint={<>Danh sách lấy từ Anthropic theo key hiện tại. <button type="button" onClick={() => setMode("custom")} className="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-primary hover:underline">Nhập model id thủ công</button></>}
+            hint={<>Các model khả dụng với key hiện tại. <button type="button" onClick={() => setMode("custom")} className="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-primary hover:underline">Nhập model id thủ công</button></>}
           >
             <Select name="model" defaultValue={inList ? current : models[0].id} className="font-mono">
               {models.map((m) => (
@@ -110,8 +108,8 @@ export function ModelForm({
         <div className="flex flex-wrap items-center justify-between gap-2 border-0 border-t border-solid border-zinc-100 pt-5">
           <div>
             {hasDbModel && (
-              <Button type="button" variant="ghost" disabled={extra.pending} onClick={() => extra.run(resetModel, `Về model mặc định (${fallbackModel})?`)}>
-                <RotateCcw size={16} /> Về mặc định ({fallbackModel})
+              <Button type="button" variant="ghost" disabled={extra.pending} onClick={() => extra.run(resetModel, `Quay về model mặc định của hệ thống (${fallbackModel})?`)}>
+                <RotateCcw size={16} /> Dùng mặc định
               </Button>
             )}
           </div>

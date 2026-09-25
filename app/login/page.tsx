@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
+import { LogoMark, PRODUCT_NAME } from "@/components/brand/Logo";
 import { getCurrentUser } from "@/lib/auth/session";
 import { LoginForm } from "./LoginForm";
 
-export const metadata = { title: "Đăng nhập · Worksheet Generator" };
+export const metadata = { title: "Đăng nhập" };
 
 export default async function LoginPage({ searchParams }: { searchParams: { next?: string } }) {
   if (await getCurrentUser()) redirect("/");
@@ -10,9 +11,9 @@ export default async function LoginPage({ searchParams }: { searchParams: { next
     <main className="app-ui flex min-h-screen flex-col items-center justify-center bg-page px-4 py-12">
       <div className="w-full max-w-[400px]">
         <div className="mb-8 flex flex-col items-center text-center">
-          <span className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-primary font-display text-xl font-extrabold text-white shadow-medium">W</span>
-          <h1 className="font-display text-subhead text-zinc-900">Đăng nhập</h1>
-          <p className="mt-1.5 text-sm text-zinc-500">Worksheet Generator — tạo worksheet tiếng Anh theo CEFR</p>
+          <LogoMark size={52} className="mb-5 drop-shadow-md" />
+          <h1 className="font-display text-subhead text-zinc-900">Đăng nhập {PRODUCT_NAME}</h1>
+          <p className="mt-1.5 text-sm text-zinc-500">Tạo worksheet tiếng Anh theo CEFR với AI</p>
         </div>
         <div className="rounded-xl border border-solid border-zinc-100 bg-white p-8 shadow-medium">
           <LoginForm next={searchParams.next} />

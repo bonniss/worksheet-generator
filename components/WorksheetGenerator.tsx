@@ -1125,7 +1125,7 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
             <img src={LOGO_SRC} alt="Flyer" style={{ height: 54 }} />
             <div>
-              <div style={{ fontFamily: t.display, fontWeight: 800, fontSize: 22, color: t.accent }}>Worksheet Generator</div>
+              <div style={{ fontFamily: t.display, fontWeight: 800, fontSize: 22, color: t.accent }}>Worksheet Genie</div>
               <div style={{ fontSize: 13, color: "#7a8a99" }}>Prototype — generate theo framework 6 tầng của bạn</div>
             </div>
           </div>

@@ -16,7 +16,6 @@ export function EditUserForm({ user, isSelf }: { user: EditableUser; isSelf: boo
     <form action={action} className="space-y-5">
       {state.error && <Alert>{state.error}</Alert>}
       {state.success && <Alert kind="success">{state.success}</Alert>}
-      <input type="hidden" name="id" value={user.id} />
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Username" hint="Dùng để đăng nhập, không đổi được.">
           <Input value={user.username} disabled readOnly className="font-mono" />
@@ -47,6 +46,7 @@ export function EditUserForm({ user, isSelf }: { user: EditableUser; isSelf: boo
       <div className="flex justify-end border-0 border-t border-solid border-zinc-100 pt-5">
         <SubmitButton pendingText="Đang lưu...">Lưu thay đổi</SubmitButton>
       </div>
+      <input type="hidden" name="id" value={user.id} />
     </form>
   );
 }
@@ -57,13 +57,13 @@ export function ResetPasswordForm({ id, username }: { id: string; username: stri
     <form action={action} className="space-y-4">
       {state.error && <Alert>{state.error}</Alert>}
       {state.generatedPassword && <PasswordReveal username={username} password={state.generatedPassword} />}
-      <input type="hidden" name="id" value={id} />
       <SubmitButton
         variant="secondary" pendingText="Đang đặt lại..." icon={<KeyRound size={16} />}
         confirm={`Đặt lại mật khẩu cho @${username}? Người này sẽ bị đăng xuất khỏi mọi thiết bị.`}
       >
         Đặt lại mật khẩu
       </SubmitButton>
+      <input type="hidden" name="id" value={id} />
     </form>
   );
 }

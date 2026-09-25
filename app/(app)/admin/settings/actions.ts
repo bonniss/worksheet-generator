@@ -29,7 +29,9 @@ export async function clearApiKey(): Promise<SettingsState> {
   await requireAdmin();
   await deleteSetting(SETTING_KEYS.apiKey);
   revalidatePath("/admin/settings");
-  return { success: process.env.ANTHROPIC_API_KEY ? "Đã xoá key trong DB — đang dùng ANTHROPIC_API_KEY từ biến môi trường." : "Đã xoá API key." };
+  return process.env.ANTHROPIC_API_KEY
+    ? { success: "Đã xoá key — đang dùng key mặc định của hệ thống." }
+    : { warning: "Đã xoá key. Hệ thống chưa có key nào, chức năng tạo worksheet tạm ngừng." };
 }
 
 export async function testApiKey(): Promise<SettingsState> {
@@ -51,12 +53,12 @@ export async function saveModel(_prev: SettingsState, formData: FormData): Promi
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   await setSetting(SETTING_KEYS.model, parsed.data, me.id);
   revalidatePath("/admin/settings");
-  return { success: `Đã chọn model ${parsed.data}. Áp dụng ngay cho các lượt tạo worksheet tiếp theo.` };
+  return { success: `Đã chuyển sang ${parsed.data}.` };
 }
 
 export async function resetModel(): Promise<SettingsState> {
   await requireAdmin();
   await deleteSetting(SETTING_KEYS.model);
   revalidatePath("/admin/settings");
-  return { success: "Đã về model mặc định." };
+  return { success: "Đã quay về model mặc định." };
 }
