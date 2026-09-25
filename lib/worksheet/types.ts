@@ -78,6 +78,8 @@ export interface Exercise {
   items: Item[];
   count?: number;
   _failed?: boolean;
+  /** Đang được AI viết (stream) — chỉ tồn tại trên màn hình, không lưu */
+  _streaming?: boolean;
 }
 
 export interface VocabItem {
