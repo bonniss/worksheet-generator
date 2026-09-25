@@ -31,7 +31,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
   const [rows, [{ total }]] = await Promise.all([
     db
       .select({
-        id: users.id, username: users.username, email: users.email, name: users.name, role: users.role, isActive: users.isActive,
+        id: users.id, username: users.username, email: users.email, name: users.name, role: users.role, isActive: users.isActive, mustChangePassword: users.mustChangePassword,
         createdAt: users.createdAt, worksheetCount: count(worksheets.id),
       })
       .from(users)
@@ -112,7 +112,12 @@ export default async function UsersPage({ searchParams }: { searchParams: Search
                     </Link>
                   </Td>
                   <Td><RoleBadge role={u.role} /></Td>
-                  <Td>{u.isActive ? <Badge tone="success" dot>Hoạt động</Badge> : <Badge tone="danger" dot>Đã khoá</Badge>}</Td>
+                  <Td>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {u.isActive ? <Badge tone="success" dot>Hoạt động</Badge> : <Badge tone="danger" dot>Đã khoá</Badge>}
+                      {u.mustChangePassword && <Badge tone="warning">Chưa đổi mật khẩu</Badge>}
+                    </div>
+                  </Td>
                   <Td className="text-right tabular-nums">
                     {u.worksheetCount > 0
                       ? <Link href={`/worksheets?owner=${u.id}`} className="font-medium text-primary hover:underline">{u.worksheetCount}</Link>

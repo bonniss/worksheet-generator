@@ -17,6 +17,8 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: roleEnum("role").notNull().default("user"),
   isActive: boolean("is_active").notNull().default(true),
+  // Mật khẩu do admin đặt/sinh (tạo mới, import, đặt lại) → bắt đổi ở lần đăng nhập kế tiếp
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
   // Hạn mức AI riêng (null = dùng mặc định hệ thống trong app_settings)
   aiRunsPerDay: integer("ai_runs_per_day"),
   aiRegensPerDay: integer("ai_regens_per_day"),

@@ -8,7 +8,7 @@ import { users } from "@/db/schema";
 import { generatePassword, hashPassword } from "@/lib/auth/password";
 import { requireAdmin, revokeUserSessions } from "@/lib/auth/session";
 import {
-  createUserSchema, fieldErrors, importRowSchema, isUuid, MAX_IMPORT_ROWS, updateUserSchema, type ImportRowInput,
+  createUserSchema, fieldErrors, password as passwordSchema, importRowSchema, isUuid, MAX_IMPORT_ROWS, updateUserSchema, type ImportRowInput,
 } from "@/lib/validators";
 
 export type FormState = {
@@ -60,7 +60,8 @@ export async function createUser(_prev: FormState, formData: FormData): Promise<
 
   const generated = parsed.data.password ? undefined : generatePassword();
   const password = parsed.data.password || generated!;
-  await db.insert(users).values({ username, email, name, role, passwordHash: await hashPassword(password) });
+  // Mật khẩu do admin đặt/sinh → người dùng phải đổi ở lần đăng nhập đầu
+  await db.insert(users).values({ username, email, name, role, passwordHash: await hashPassword(password), mustChangePassword: true });
   revalidatePath("/admin/users");
   return {
     success: `Đã tạo tài khoản ${username}.`,
@@ -107,15 +108,23 @@ export async function resetPassword(_prev: FormState, formData: FormData): Promi
   const id = String(formData.get("id") ?? "");
   if (!isUuid(id)) return { error: "Tài khoản không tồn tại." };
   if (id === me.id) return { error: "Đổi mật khẩu của chính bạn trong trang Hồ sơ." };
-  const password = generatePassword();
+  // Admin tự nhập mật khẩu mới (vd báo qua điện thoại) hoặc để trống để hệ thống sinh ngẫu nhiên
+  const typed = String(formData.get("password") ?? "");
+  if (typed) {
+    const check = passwordSchema.safeParse(typed);
+    if (!check.success) return { error: check.error.issues[0].message };
+  }
+  const password = typed || generatePassword();
   const updated = await db
     .update(users)
-    .set({ passwordHash: await hashPassword(password), updatedAt: new Date() })
+    .set({ passwordHash: await hashPassword(password), mustChangePassword: true, updatedAt: new Date() })
     .where(eq(users.id, id))
     .returning({ id: users.id });
   if (!updated.length) return { error: "Tài khoản không tồn tại." };
   await revokeUserSessions(id);
-  return { success: "Đã đặt lại mật khẩu.", generatedPassword: password };
+  return typed
+    ? { success: "Đã đặt mật khẩu mới. Người dùng sẽ phải đổi mật khẩu ở lần đăng nhập tới." }
+    : { success: "Đã đặt lại mật khẩu.", generatedPassword: password };
 }
 
 export async function deleteUser(formData: FormData) {
@@ -195,6 +204,7 @@ export async function importUsers(rows: (ImportRowInput & { line: number })[]): 
       const values = await Promise.all(
         toCreate.map(async (v) => ({
           username: v.username, email: v.email, name: v.name, role: v.role, passwordHash: await hashPassword(v.password),
+          mustChangePassword: true,
         })),
       );
       // Một câu INSERT duy nhất. ON CONFLICT (không chỉ định cột) bỏ qua dòng vi phạm unique username hoặc email

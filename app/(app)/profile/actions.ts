@@ -33,7 +33,7 @@ export async function changePassword(_prev: ProfileState, formData: FormData): P
   }
   await db
     .update(users)
-    .set({ passwordHash: await hashPassword(parsed.data.newPassword), updatedAt: new Date() })
+    .set({ passwordHash: await hashPassword(parsed.data.newPassword), mustChangePassword: false, updatedAt: new Date() })
     .where(eq(users.id, me.id));
   await revokeUserSessions(me.id, true); // đăng xuất các thiết bị khác
   return { success: "Đã đổi mật khẩu. Các thiết bị khác đã bị đăng xuất." };

@@ -50,6 +50,13 @@
       "when": 1790326699795,
       "tag": "0006_worksheet_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790327052199,
+      "tag": "0007_must_change_password",
+      "breakpoints": true
     }
   ]
 }
