@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { and, count, desc, eq, ilike, or, type SQL } from "drizzle-orm";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { Copy, Globe, Lock, Plus, Trash2 } from "lucide-react";
 import { db } from "@/db";
 import { users, worksheets } from "@/db/schema";
 import {
@@ -12,7 +12,7 @@ import { SubmitButton } from "@/components/ui/SubmitButton";
 import { requireUser } from "@/lib/auth/session";
 import { likePattern } from "@/lib/sql";
 import { isUuid } from "@/lib/validators";
-import { deleteWorksheet, duplicateWorksheet } from "./actions";
+import { deleteWorksheet, duplicateWorksheet, setVisibility } from "./actions";
 
 export const metadata = { title: "Worksheet" };
 
@@ -38,7 +38,7 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
     db
       .select({
         id: worksheets.id, title: worksheets.title, level: worksheets.level, type: worksheets.type,
-        topic: worksheets.topic, updatedAt: worksheets.updatedAt, ownerName: users.name, ownerUsername: users.username,
+        topic: worksheets.topic, updatedAt: worksheets.updatedAt, visibility: worksheets.visibility, ownerName: users.name, ownerUsername: users.username,
       })
       .from(worksheets)
       .innerJoin(users, eq(worksheets.ownerId, users.id))
@@ -51,7 +51,7 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
       ? db.select({ id: users.id, name: users.name, username: users.username }).from(users).orderBy(users.name)
       : Promise.resolve([]),
   ]);
-  const cols = isAdmin ? 6 : 5;
+  const cols = isAdmin ? 7 : 6;
 
   return (
     <Page>
@@ -84,6 +84,7 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
                 <Th>Trình độ</Th>
                 <Th>Loại</Th>
                 {isAdmin && <Th>Người tạo</Th>}
+                <Th>Chia sẻ</Th>
                 <Th>Cập nhật</Th>
                 <Th />
               </tr>
@@ -110,6 +111,20 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
                       <div className="font-mono text-xs text-zinc-500">@{r.ownerUsername}</div>
                     </Td>
                   )}
+                  <Td>
+                    <form action={setVisibility} className="inline">
+                      <input type="hidden" name="id" value={r.id} />
+                      <input type="hidden" name="visibility" value={r.visibility === "public" ? "private" : "public"} />
+                      <SubmitButton
+                        variant="ghost" size="sm" pendingText="..."
+                        title={r.visibility === "public" ? "Đang công khai — bấm để chuyển về riêng tư" : "Riêng tư — bấm để chia sẻ cho mọi người trong hệ thống"}
+                        icon={r.visibility === "public" ? <Globe size={14} className="text-success" /> : <Lock size={14} className="text-zinc-400" />}
+                        className={r.visibility === "public" ? "!text-success" : "!text-zinc-500"}
+                      >
+                        {r.visibility === "public" ? "Công khai" : "Riêng tư"}
+                      </SubmitButton>
+                    </form>
+                  </Td>
                   <Td className="whitespace-nowrap text-zinc-500">{r.updatedAt.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}</Td>
                   <Td>
                     <div className="flex justify-end gap-1 opacity-70 transition-opacity group-hover:opacity-100">

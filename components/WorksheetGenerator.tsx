@@ -1,6 +1,9 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- ảnh là data URI (base64) người dùng tải lên, next/image không phù hợp */
 import { useCallback, useEffect, useState, useMemo, useRef, type ChangeEvent, type CSSProperties, type ReactNode } from "react";
+import { useFormStatus } from "react-dom";
+import { duplicateWorksheet } from "@/app/(app)/worksheets/actions";
+import { startNavigationProgress } from "@/components/nav/progress-events";
 import { LOGO_SRC, MASCOT_SRC } from "@/lib/worksheet/assets";
 import type { AiPurpose } from "@/lib/worksheet/ai-purposes";
 import { ApiError, callClaude, type AiCallContext } from "@/lib/worksheet/claude-client";
@@ -33,6 +36,19 @@ function partialExercise(p: unknown, planRow: ExercisePlan): Exercise | null {
     items,
     _streaming: true,
   } as Exercise;
+}
+
+/** Nút "Nhân bản về của tôi" trong dải chỉ xem — spinner khi server action đang chạy. */
+function DuplicateButton({ theme }: { theme: Theme }) {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending} onClick={() => startNavigationProgress()} style={{
+      border: "none", borderRadius: 999, padding: "7px 14px", fontWeight: 800, fontSize: 13, cursor: pending ? "default" : "pointer",
+      background: theme.accent, color: "#fff", fontFamily: theme.body, display: "inline-flex", alignItems: "center", gap: 6,
+    }}>
+      {pending ? <Spinner color="#fff" /> : "📋"} Nhân bản về của tôi để sửa
+    </button>
+  );
 }
 
 function Spinner({ color }: { color: string }) {
@@ -968,9 +984,18 @@ export interface WorksheetGeneratorProps {
   initial?: SavedProject;
   /** id bản ghi trong DB; không có = worksheet mới, lần lưu đầu sẽ tạo bản ghi */
   worksheetId?: string;
+  /** Quyền trên worksheet đã lưu. readOnly = worksheet công khai của người khác (chỉ xem/in/nhân bản). */
+  access?: {
+    readOnly: boolean;
+    visibility: "private" | "public";
+    owner: { name: string; username: string; isMe: boolean };
+  };
 }
 
-export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGeneratorProps) {
+export default function WorksheetGenerator({ initial, worksheetId, access }: WorksheetGeneratorProps) {
+  const readOnly = !!access?.readOnly;
+  const [visibility, setVisibility] = useState<"private" | "public">(access?.visibility ?? "private");
+  const [visBusy, setVisBusy] = useState(false);
   const [screen, setScreen] = useState<"setup" | "sheet">(initial ? "sheet" : "setup");
   const [cfg, setCfg] = useState<Cfg>(initial?.cfg ?? DEFAULT_CFG);
   const [themeOverride, setThemeOverride] = useState<Level | null>(initial?.themeOverride ?? null);
@@ -1161,12 +1186,31 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
 
   // Tự lưu: có thay đổi → chờ 2s không sửa thêm → lưu. Bỏ qua khi đang sinh worksheet.
   useEffect(() => {
-    if (!ws || loading || !isStable(ws)) return;
+    if (readOnly || !ws || loading || !isStable(ws)) return;
     if (snapshotKey(ws, cfg, themeOverride) === lastSavedKey.current) return;
     setSaveState((s) => (s === "saving" ? s : "dirty"));
     const t = window.setTimeout(() => { void saveNow(); }, 2000);
     return () => window.clearTimeout(t);
-  }, [ws, cfg, themeOverride, loading, saveNow]);
+  }, [ws, cfg, themeOverride, loading, saveNow, readOnly]);
+
+  /** Bật/tắt công khai (chủ sở hữu / admin). */
+  async function toggleVisibility() {
+    const id = dbIdRef.current;
+    if (!id || visBusy) return;
+    const next = visibility === "public" ? "private" : "public";
+    setVisBusy(true);
+    try {
+      const res = await fetch(`/api/worksheets/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visibility: next }),
+      });
+      if (!res.ok) throw new Error("Máy chủ báo lỗi (" + res.status + ").");
+      setVisibility(next);
+    } catch (e) {
+      setError("Chưa đổi được chế độ chia sẻ: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setVisBusy(false);
+    }
+  }
 
   // Còn thay đổi chưa lưu thì trình duyệt hỏi lại trước khi rời trang
   useEffect(() => {
@@ -1359,8 +1403,10 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
         maxWidth: 640, margin: "0 auto 14px", display: "flex", gap: 8, flexWrap: "wrap",
         alignItems: "center", background: "rgba(255,255,255,0.92)", borderRadius: 16, padding: "10px 14px",
       }}>
-        <button onClick={() => setScreen("setup")} style={{ border: "none", background: "transparent", color: theme.accent, fontWeight: 800, cursor: "pointer", fontSize: 13 }}>← Thông tin</button>
-        <span style={{ color: "#c3ced8" }}>|</span>
+        {!readOnly && <>
+          <button onClick={() => setScreen("setup")} style={{ border: "none", background: "transparent", color: theme.accent, fontWeight: 800, cursor: "pointer", fontSize: 13 }}>← Thông tin</button>
+          <span style={{ color: "#c3ced8" }}>|</span>
+        </>}
         <span style={{ fontSize: 12.5, fontWeight: 700, color: "#7a8a99" }}>Theme màu:</span>
         <select value={themeOverride || cfg.level} onChange={(e) => setThemeOverride(e.target.value as Level)} style={{
           border: `1.5px solid ${theme.line}`, borderRadius: 999, padding: "4px 10px", fontSize: 12.5, fontWeight: 700, color: theme.accent,
@@ -1370,7 +1416,7 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
         <div style={{ flex: 1 }} />
         <ToolBtn theme={theme} onClick={() => setShowAnswers(!showAnswers)}>{showAnswers ? "🙈 Ẩn đáp án" : "✅ Đáp án"}</ToolBtn>
         {/* Tự lưu: nút chỉ báo trạng thái; bấm để lưu ngay */}
-        <span title={saveState === "error" ? saveErr : saveState === "saved" ? "Đã tự lưu vào tài khoản" : undefined}>
+        {!readOnly && <span title={saveState === "error" ? saveErr : saveState === "saved" ? "Đã tự lưu vào tài khoản" : undefined}>
           <ToolBtn theme={theme} onClick={() => { void saveNow(); }} disabled={!ws || loading || saveState === "saving" || saveState === "idle"}>
             {saveState === "saving" ? <><Spinner color={theme.accent} /> Đang lưu</>
               : saveState === "saved" ? <>✓ Đã lưu{savedAt ? " " + savedAt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : ""}</>
@@ -1378,9 +1424,16 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
               : saveState === "dirty" ? "● Chưa lưu"
               : "💾 Lưu"}
           </ToolBtn>
-        </span>
+        </span>}
+        {!readOnly && dbId && (
+          <span title={visibility === "public" ? "Mọi người trong hệ thống xem, in và nhân bản được. Bấm để chuyển về riêng tư." : "Chỉ mình bạn (và admin) thấy. Bấm để chia sẻ cho mọi người trong hệ thống."}>
+            <ToolBtn theme={theme} onClick={() => { void toggleVisibility(); }} disabled={visBusy}>
+              {visBusy ? <Spinner color={theme.accent} /> : visibility === "public" ? "🌐" : "🔒"} {visibility === "public" ? "Công khai" : "Riêng tư"}
+            </ToolBtn>
+          </span>
+        )}
         <ToolBtn theme={theme} onClick={() => { if (!ws) return; void saveProject(ws, cfg, themeOverride).then(() => { setSaveHint(true); setTimeout(() => setSaveHint(false), 10000); }); }}>⬇️ Xuất file</ToolBtn>
-        <ToolBtn theme={theme} onClick={() => openInputRef.current && openInputRef.current.click()}>📂 Nhập file</ToolBtn>
+        {!readOnly && <ToolBtn theme={theme} onClick={() => openInputRef.current && openInputRef.current.click()}>📂 Nhập file</ToolBtn>}
         <input type="file" accept=".json,application/json" ref={openInputRef} style={{ display: "none" }} onChange={onImportFile} />
         <ToolBtn
           theme={theme} disabled={!ws || printing}
@@ -1390,6 +1443,23 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
         </ToolBtn>
         <ToolBtn theme={theme} onClick={() => { if (ws) downloadDoc(ws, cfg, theme, showAnswers); }}>📝 Tải Word</ToolBtn>
       </div>
+
+      {readOnly && access ? (
+        <div className="ws-noprint" style={{
+          maxWidth: 640, margin: "0 auto 12px", background: "#fff", borderRadius: 12, padding: "10px 14px",
+          fontSize: 13, fontWeight: 700, color: "#52525b", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+          border: `1.5px solid ${theme.line}`,
+        }}>
+          <span style={{ flex: 1, minWidth: 220 }}>
+            🌐 Worksheet công khai của <b style={{ color: theme.ink }}>{access.owner.name}</b> <span style={{ fontWeight: 500, color: "#9aa9b8" }}>@{access.owner.username}</span> — chỉ xem, in và xuất file.
+          </span>
+          <form action={duplicateWorksheet}>
+            <input type="hidden" name="id" value={dbId ?? ""} />
+            <input type="hidden" name="open" value="1" />
+            <DuplicateButton theme={theme} />
+          </form>
+        </div>
+      ) : null}
 
       {saveHint ? (
         <div className="ws-noprint" style={{ maxWidth: 640, margin: "0 auto 12px", background: "#eef4fb", color: "#2a6db0", borderRadius: 12, padding: "10px 14px", fontSize: 13, fontWeight: 700, border: "1.5px solid #cfe4f8" }}>
@@ -1436,14 +1506,14 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
                     border: `2px solid ${theme.accent2}`, outline: "none",
                   }} />
               ) : (
-                <span onClick={() => setEditTitle(true)} title="Bấm để sửa tên worksheet"
+                <span onClick={() => { if (!readOnly) setEditTitle(true); }} title={readOnly ? undefined : "Bấm để sửa tên worksheet"}
                   style={{
                     background: "#fff", color: theme.ink, fontFamily: theme.display, fontWeight: 800,
                     fontSize: 17, borderRadius: 10, padding: "3px 12px", cursor: "text",
                     display: "inline-flex", alignItems: "center", gap: 6,
                   }}>
                   {ws.title}
-                  <span className="ws-noprint" style={{ fontSize: 12, opacity: 0.5 }}>✏️</span>
+                  {!readOnly && <span className="ws-noprint" style={{ fontSize: 12, opacity: 0.5 }}>✏️</span>}
                 </span>
               )}
             </div>
@@ -1453,7 +1523,7 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
           {ws.learn ? (
             <div className="ws-section" style={{ border: `2px solid ${theme.line}`, borderRadius: theme.radius, padding: theme.gap * 0.7, marginBottom: theme.gap * 0.8 }}>
               <SectionHeader num={++sectionNum} title={theme.learnTitle} theme={theme}
-                right={
+                right={readOnly ? undefined :
                   <span style={{ display: "flex", gap: 6 }}>
                     <ToolBtn theme={theme} onClick={() => { setEditLearn(!editLearn); setRegenBox(null); }}>✏️ Sửa</ToolBtn>
                     <ToolBtn theme={theme} onClick={() => { setRegenBox(regenBox === "learn" ? null : "learn"); setEditLearn(false); }} disabled={regenLearn}>
@@ -1548,7 +1618,7 @@ export default function WorksheetGenerator({ initial, worksheetId }: WorksheetGe
               {ex ? (
                 <>
                   <SectionHeader num={++sectionNum} title={ex.title} sub={ex.instruction} theme={theme}
-                    right={ex._streaming ? undefined :
+                    right={ex._streaming || readOnly ? undefined :
                       <span style={{ display: "flex", gap: 6 }}>
                         <span className="ws-noprint" style={{ fontSize: 10.5, fontWeight: 800, color: "#9aa9b8", alignSelf: "center", textTransform: "uppercase" }}>{ex.stage}</span>
                         <ToolBtn theme={theme} onClick={() => { setEditIdx(editIdx === i ? null : i); setRegenBox(null); }}>✏️ Sửa</ToolBtn>

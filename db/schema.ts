@@ -2,6 +2,9 @@ import { boolean, customType, index, integer, jsonb, numeric, pgEnum, pgTable, t
 import type { SavedProject } from "@/lib/worksheet/types";
 
 export const roleEnum = pgEnum("role", ["admin", "user"]);
+// private: chỉ chủ sở hữu (và admin); public: mọi người trong hệ thống xem/in/nhân bản được
+export const visibilityEnum = pgEnum("visibility", ["private", "public"]);
+export type Visibility = (typeof visibilityEnum.enumValues)[number];
 export type Role = (typeof roleEnum.enumValues)[number];
 
 export const users = pgTable("users", {
@@ -43,10 +46,15 @@ export const worksheets = pgTable(
     type: text("type").notNull(),
     topic: text("topic").notNull().default(""),
     data: jsonb("data").$type<SavedProject>().notNull(),
+    visibility: visibilityEnum("visibility").notNull().default("private"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("worksheets_owner_id_idx").on(t.ownerId), index("worksheets_updated_at_idx").on(t.updatedAt)],
+  (t) => [
+    index("worksheets_owner_id_idx").on(t.ownerId),
+    index("worksheets_updated_at_idx").on(t.updatedAt),
+    index("worksheets_visibility_updated_idx").on(t.visibility, t.updatedAt),
+  ],
 );
 
 // Cấu hình hệ thống dạng key/value (model AI, API key đã mã hoá...) — đổi được lúc chạy, không cần deploy lại
