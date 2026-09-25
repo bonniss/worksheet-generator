@@ -8,6 +8,7 @@ import { logAiCall, type AiCallRow } from "@/lib/ai-log";
 import { anthropicClient } from "@/lib/anthropic";
 import { apiUser, jsonError } from "@/lib/auth/api";
 import { getAiConfig } from "@/lib/settings";
+import { checkQuota } from "@/lib/usage";
 import { AI_PURPOSES } from "@/lib/worksheet/ai-purposes";
 import { SYSTEM_PROMPT } from "@/lib/worksheet/prompts";
 
@@ -66,6 +67,13 @@ export async function POST(req: NextRequest) {
     level: meta?.level ?? null, type: meta?.type ?? null,
     model: cfg.model, maxTokens: MAX_TOKENS, promptChars: prompt.length, status: "ok",
   };
+
+  // Hạn mức theo người / trần chi phí hệ thống — bị chặn thì không gọi Anthropic
+  const quota = await checkQuota(user, purpose, runId);
+  if (!quota.ok) {
+    void logAiCall({ ...base, status: "blocked", errorType: "quota_exceeded", httpStatus: 429, durationMs: 0 });
+    return NextResponse.json({ type: "error", error: { type: "quota_exceeded", message: quota.message } }, { status: 429 });
+  }
 
   const stream = anthropicClient(cfg.apiKey, { timeout: 58_000 }).messages.stream(
     {

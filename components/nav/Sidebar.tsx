@@ -3,14 +3,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
-  FileStack, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings2, Sparkles, Upload, User, Users, X,
+  BarChart3, FileStack, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings2, Sparkles, Upload, User, Users, X,
 } from "lucide-react";
 import { LogoMark, PRODUCT_NAME } from "@/components/brand/Logo";
 import { Avatar, RoleBadge, cx } from "@/components/ui";
 import { SIDEBAR_COOKIE } from "./constants";
 import { startNavigationProgress } from "./progress-events";
 
-const ICONS = { sparkles: Sparkles, files: FileStack, users: Users, upload: Upload, user: User, settings: Settings2 };
+const ICONS = { sparkles: Sparkles, files: FileStack, users: Users, upload: Upload, user: User, settings: Settings2, chart: BarChart3 };
 
 export type NavItem = { href: string; label: string; icon: keyof typeof ICONS; exact?: boolean };
 export type NavSection = { label: string; items: NavItem[] };

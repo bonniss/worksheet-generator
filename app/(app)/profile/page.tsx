@@ -3,13 +3,18 @@ import { db } from "@/db";
 import { worksheets } from "@/db/schema";
 import { Avatar, Card, CardTitle, Field, Input, Page, PageHeader, RoleBadge } from "@/components/ui";
 import { requireUser } from "@/lib/auth/session";
+import { userUsageToday } from "@/lib/usage";
 import { ChangePasswordForm, ProfileForm } from "./forms";
 
 export const metadata = { title: "Hồ sơ" };
 
 export default async function ProfilePage() {
   const user = await requireUser();
-  const [{ n }] = await db.select({ n: count() }).from(worksheets).where(eq(worksheets.ownerId, user.id));
+  const [[{ n }], usage] = await Promise.all([
+    db.select({ n: count() }).from(worksheets).where(eq(worksheets.ownerId, user.id)),
+    userUsageToday(user.id),
+  ]);
+  const unlimited = user.role === "admin";
   return (
     <Page width="form">
       <PageHeader title="Hồ sơ cá nhân" />
@@ -25,6 +30,27 @@ export default async function ProfilePage() {
                 <span>· {n} worksheet</span>
               </div>
             </div>
+          </div>
+          <div className="mb-5 grid grid-cols-2 gap-3">
+            {[
+              { label: "Lượt tạo hôm nay", used: usage.runs, limit: usage.runsPerDay },
+              { label: "Lượt gen lại hôm nay", used: usage.regens, limit: usage.regensPerDay },
+            ].map((t) => (
+              <div key={t.label} className="rounded-lg bg-page px-4 py-3">
+                <div className="text-caption text-zinc-500">{t.label}</div>
+                <div className="mt-0.5 font-display text-lg font-bold text-zinc-900">
+                  {t.used}{!unlimited && <span className="text-sm font-medium text-zinc-400"> / {t.limit}</span>}
+                </div>
+                {!unlimited && (
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-primary-soft">
+                    <div
+                      className={t.used >= t.limit ? "h-full bg-danger" : t.used / Math.max(t.limit, 1) >= 0.8 ? "h-full bg-warning" : "h-full bg-primary"}
+                      style={{ width: `${Math.min(100, (t.used / Math.max(t.limit, 1)) * 100)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
           <div className="mb-5 grid gap-5 sm:grid-cols-2">
             <Field label="Username" hint="Dùng để đăng nhập.">

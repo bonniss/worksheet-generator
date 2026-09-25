@@ -1,4 +1,5 @@
 "use server";
+import { z } from "zod";
 import { and, count, eq, inArray, ne, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -218,4 +219,27 @@ export async function importUsers(rows: (ImportRowInput & { line: number })[]): 
   result.errors.sort(byLine);
   if (result.created.length) revalidatePath("/admin/users");
   return result;
+}
+
+/* ===== Hạn mức AI riêng ===== */
+
+const optionalLimit = z.union([z.literal(""), z.coerce.number().int("Phải là số nguyên").min(0).max(5000)]);
+
+export async function updateUserLimits(_prev: FormState, formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  if (!isUuid(id)) return { error: "Tài khoản không tồn tại." };
+  const runs = optionalLimit.safeParse(String(formData.get("runs") ?? "").trim());
+  const regens = optionalLimit.safeParse(String(formData.get("regens") ?? "").trim());
+  if (!runs.success || !regens.success) return { error: "Hạn mức phải là số nguyên từ 0 đến 5000 (hoặc để trống)." };
+  await db
+    .update(users)
+    .set({
+      aiRunsPerDay: runs.data === "" ? null : runs.data,
+      aiRegensPerDay: regens.data === "" ? null : regens.data,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, id));
+  revalidatePath(`/admin/users/${id}`);
+  return { success: "Đã lưu hạn mức riêng." };
 }

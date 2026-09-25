@@ -1,11 +1,11 @@
 import { Suspense } from "react";
-import { Cpu, KeyRound } from "lucide-react";
+import { Cpu, Gauge, KeyRound } from "lucide-react";
 import { Alert, Badge, Card, CardTitle, IconTile, Page, PageHeader, Skeleton, Spinner } from "@/components/ui";
 import { FieldSkeleton } from "@/components/ui/skeletons";
 import { listModels, type ModelOption } from "@/lib/anthropic";
 import { requireAdmin } from "@/lib/auth/session";
-import { DEFAULT_MODEL, getAiSettingsView, type Source } from "@/lib/settings";
-import { ApiKeyForm, ModelForm } from "./forms";
+import { DEFAULT_MODEL, getAiLimits, getAiSettingsView, type Source } from "@/lib/settings";
+import { ApiKeyForm, LimitsForm, ModelForm } from "./forms";
 
 export const metadata = { title: "Cấu hình AI" };
 export const dynamic = "force-dynamic";
@@ -76,7 +76,7 @@ function ModelPickerFallback() {
 
 export default async function SettingsPage() {
   await requireAdmin();
-  const { config, view } = await getAiSettingsView();
+  const [{ config, view }, limits] = await Promise.all([getAiSettingsView(), getAiLimits()]);
 
   return (
     <Page>
@@ -109,6 +109,10 @@ export default async function SettingsPage() {
               hasDbModel={view.modelSource === "db"}
             />
           </Suspense>
+        </Card>
+        <Card className="lg:col-span-2">
+          <CardTitle icon={<IconTile><Gauge size={18} /></IconTile>} title="Hạn mức sử dụng" sub="Giới hạn lượt dùng AI để kiểm soát chi phí." />
+          <LimitsForm {...limits} />
         </Card>
       </div>
     </Page>

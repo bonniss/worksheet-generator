@@ -7,6 +7,9 @@ import { decryptSecret, encryptSecret, maskSecret } from "./crypto";
 export const SETTING_KEYS = {
   apiKey: "ai.anthropic_api_key", // đã mã hoá
   model: "ai.model",
+  runsPerDay: "ai.limit.runs_per_day",
+  regensPerDay: "ai.limit.regens_per_day",
+  systemUsdPerDay: "ai.limit.system_usd_per_day",
 } as const;
 type SettingKey = (typeof SETTING_KEYS)[keyof typeof SETTING_KEYS];
 
@@ -89,4 +92,32 @@ export async function setSetting(key: SettingKey, value: string, userId: string)
 
 export async function deleteSetting(key: SettingKey) {
   await db.delete(appSettings).where(eq(appSettings.key, key));
+}
+
+/* ===== Hạn mức AI ===== */
+
+export const DEFAULT_LIMITS = { runsPerDay: 20, regensPerDay: 60 } as const;
+
+export type AiLimits = {
+  /** Lượt tạo worksheet / người / ngày */
+  runsPerDay: number;
+  /** Lượt gen lại (1 bài hoặc phần Learn) / người / ngày */
+  regensPerDay: number;
+  /** Trần chi phí toàn hệ thống / ngày (USD); null = không giới hạn */
+  systemUsdPerDay: number | null;
+};
+
+const toInt = (v: string | undefined, fallback: number) => {
+  const n = Number(v);
+  return v !== undefined && Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
+};
+
+export async function getAiLimits(): Promise<AiLimits> {
+  const rows = await readRows([SETTING_KEYS.runsPerDay, SETTING_KEYS.regensPerDay, SETTING_KEYS.systemUsdPerDay]);
+  const usd = Number(rows.get(SETTING_KEYS.systemUsdPerDay)?.value);
+  return {
+    runsPerDay: toInt(rows.get(SETTING_KEYS.runsPerDay)?.value, DEFAULT_LIMITS.runsPerDay),
+    regensPerDay: toInt(rows.get(SETTING_KEYS.regensPerDay)?.value, DEFAULT_LIMITS.regensPerDay),
+    systemUsdPerDay: Number.isFinite(usd) && usd > 0 ? usd : null,
+  };
 }
