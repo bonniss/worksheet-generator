@@ -14,11 +14,13 @@
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@neon/config": "^1.7.3",
     "@neon/env": "^1.4.4",
     "@neondatabase/serverless": "^1.1.0",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.3",
+    "lucide-react": "^1.48.0",
     "next": "14.2.15",
     "papaparse": "^5.7.0",
     "react": "^18.3.1",

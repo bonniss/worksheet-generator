@@ -1,23 +1,27 @@
 import Link from "next/link";
 import { count, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { db } from "@/db";
 import { users, worksheets } from "@/db/schema";
-import { Card, PageTitle, buttonClass } from "@/components/ui";
+import { Avatar, Badge, Card, CardTitle, Page, PageHeader, RoleBadge } from "@/components/ui";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { requireAdmin } from "@/lib/auth/session";
 import { isUuid } from "@/lib/validators";
 import { deleteUser } from "../actions";
 import { EditUserForm, ResetPasswordForm } from "./forms";
 
-export const metadata = { title: "Sửa tài khoản · Worksheet Generator" };
+export const metadata = { title: "Chi tiết tài khoản · Worksheet Generator" };
 
 export default async function EditUserPage({ params }: { params: { id: string } }) {
   const me = await requireAdmin();
   if (!isUuid(params.id)) notFound();
   const [[user], [{ n }]] = await Promise.all([
     db
-      .select({ id: users.id, username: users.username, email: users.email, name: users.name, role: users.role, isActive: users.isActive, createdAt: users.createdAt })
+      .select({
+        id: users.id, username: users.username, email: users.email, name: users.name, role: users.role,
+        isActive: users.isActive, createdAt: users.createdAt,
+      })
       .from(users)
       .where(eq(users.id, params.id))
       .limit(1),
@@ -27,38 +31,62 @@ export default async function EditUserPage({ params }: { params: { id: string } 
   const isSelf = user.id === me.id;
 
   return (
-    <main className="app-ui mx-auto max-w-xl space-y-4 px-4 py-6">
-      <PageTitle
-        title={user.name}
-        sub={`@${user.username}${user.email ? ` · ${user.email}` : ""} · tạo ngày ${user.createdAt.toLocaleDateString("vi-VN")} · ${n} worksheet`}
-        actions={<Link href="/admin/users" className={buttonClass("ghost")}>← Danh sách</Link>}
+    <Page width="form">
+      <PageHeader
+        back={{ href: "/admin/users", label: "Tài khoản" }}
+        title={
+          <span className="flex items-center gap-4">
+            <Avatar name={user.name} size={48} />
+            <span className="min-w-0">{user.name}</span>
+          </span>
+        }
       />
+      <div className="-mt-4 mb-8 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+        <span className="font-mono text-zinc-700">@{user.username}</span>
+        {user.email && <span>· {user.email}</span>}
+        <span className="mx-1 h-3.5 w-px bg-zinc-200" />
+        <RoleBadge role={user.role} />
+        {user.isActive ? <Badge tone="success" dot>Hoạt động</Badge> : <Badge tone="danger" dot>Đã khoá</Badge>}
+        <span className="mx-1 h-3.5 w-px bg-zinc-200" />
+        <span>Tạo ngày {user.createdAt.toLocaleDateString("vi-VN")}</span>
+        <span>·</span>
+        {n > 0
+          ? <Link href={`/worksheets?owner=${user.id}`} className="text-primary hover:underline">{n} worksheet</Link>
+          : <span>0 worksheet</span>}
+      </div>
 
-      <Card>
-        <h2 className="mb-4 text-base font-semibold">Thông tin</h2>
-        <EditUserForm user={user} isSelf={isSelf} />
-      </Card>
+      <div className="space-y-6">
+        <Card>
+          <CardTitle title="Thông tin tài khoản" />
+          <EditUserForm user={user} isSelf={isSelf} />
+        </Card>
 
-      {!isSelf && (
-        <>
-          <Card>
-            <h2 className="mb-1 text-base font-semibold">Đặt lại mật khẩu</h2>
-            <p className="mb-3 text-sm text-slate-500">Sinh mật khẩu ngẫu nhiên mới và đăng xuất người dùng khỏi mọi thiết bị.</p>
-            <ResetPasswordForm id={user.id} username={user.username} />
-          </Card>
+        {!isSelf && (
+          <>
+            <Card>
+              <CardTitle title="Đặt lại mật khẩu" sub="Sinh mật khẩu ngẫu nhiên mới và đăng xuất người dùng khỏi mọi thiết bị." />
+              <ResetPasswordForm id={user.id} username={user.username} />
+            </Card>
 
-          <Card className="border-red-200">
-            <h2 className="mb-1 text-base font-semibold text-red-700">Xoá tài khoản</h2>
-            <p className="mb-3 text-sm text-slate-500">Xoá vĩnh viễn tài khoản và toàn bộ {n} worksheet của người dùng này.</p>
-            <form action={deleteUser}>
-              <input type="hidden" name="id" value={user.id} />
-              <SubmitButton variant="danger" pendingText="Đang xoá..." confirm={`Xoá vĩnh viễn ${user.username} và ${n} worksheet?`}>
-                Xoá tài khoản
-              </SubmitButton>
-            </form>
-          </Card>
-        </>
-      )}
-    </main>
+            <Card className="border-red-100">
+              <CardTitle
+                title="Xoá tài khoản"
+                tone="danger"
+                sub={<>Xoá vĩnh viễn tài khoản và toàn bộ <b className="text-zinc-700">{n} worksheet</b> của người dùng này. Không thể hoàn tác.</>}
+              />
+              <form action={deleteUser}>
+                <input type="hidden" name="id" value={user.id} />
+                <SubmitButton
+                  variant="danger" pendingText="Đang xoá..." icon={<Trash2 size={16} />}
+                  confirm={`Xoá vĩnh viễn @${user.username} và ${n} worksheet?`}
+                >
+                  Xoá tài khoản
+                </SubmitButton>
+              </form>
+            </Card>
+          </>
+        )}
+      </div>
+    </Page>
   );
 }

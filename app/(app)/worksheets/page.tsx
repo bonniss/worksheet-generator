@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { and, count, desc, eq, ilike, or, type SQL } from "drizzle-orm";
+import { Copy, Plus, Trash2 } from "lucide-react";
 import { db } from "@/db";
 import { users, worksheets } from "@/db/schema";
-import { Badge, Card, Input, PageTitle, Select, buttonClass } from "@/components/ui";
+import {
+  Badge, Card, EmptyRow, FilterBar, Page, PageHeader, SearchInput, Select, Td, Th, buttonClass,
+} from "@/components/ui";
 import { Pagination } from "@/components/ui/Pagination";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import { requireUser } from "@/lib/auth/session";
@@ -28,6 +31,7 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
   if (searchParams.level && LEVELS.includes(searchParams.level)) filters.push(eq(worksheets.level, searchParams.level));
   if (q) filters.push(or(ilike(worksheets.title, likePattern(q)), ilike(worksheets.topic, likePattern(q))));
   const where = and(...filters);
+  const filtered = !!(q || searchParams.level || (isAdmin && searchParams.owner));
 
   const [rows, [{ total }], owners] = await Promise.all([
     db
@@ -46,88 +50,93 @@ export default async function WorksheetsPage({ searchParams }: { searchParams: S
       ? db.select({ id: users.id, name: users.name, username: users.username }).from(users).orderBy(users.name)
       : Promise.resolve([]),
   ]);
+  const cols = isAdmin ? 6 : 5;
 
   return (
-    <main className="app-ui mx-auto max-w-6xl px-4 py-6">
-      <PageTitle
-        title={isAdmin ? "Worksheet (toàn hệ thống)" : "Worksheet của tôi"}
-        sub={`${total} worksheet`}
-        actions={<Link href="/" className={buttonClass()}>+ Tạo worksheet</Link>}
+    <Page>
+      <PageHeader
+        title={isAdmin ? "Tất cả worksheet" : "Worksheet của tôi"}
+        sub={`${total} worksheet${filtered ? " khớp bộ lọc" : ""}`}
+        actions={<Link href="/" className={buttonClass()}><Plus size={16} strokeWidth={2.5} /> Tạo worksheet</Link>}
       />
 
-      <Card className="mb-4">
-        <form className="flex flex-wrap items-center gap-3">
-          <div className="min-w-[200px] flex-1">
-            <Input name="q" placeholder="Tìm theo tiêu đề hoặc chủ điểm..." defaultValue={q} />
-          </div>
-          <Select name="level" defaultValue={searchParams.level ?? ""} className="w-auto">
-            <option value="">Mọi trình độ</option>
-            {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+      <FilterBar>
+        <SearchInput name="q" placeholder="Tìm theo tiêu đề hoặc chủ điểm" defaultValue={q} />
+        <Select name="level" defaultValue={searchParams.level ?? ""} className="w-40">
+          <option value="">Mọi trình độ</option>
+          {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+        </Select>
+        {isAdmin && (
+          <Select name="owner" defaultValue={searchParams.owner ?? ""} className="w-56">
+            <option value="">Mọi người dùng</option>
+            {owners.map((o) => <option key={o.id} value={o.id}>{o.name} (@{o.username})</option>)}
           </Select>
-          {isAdmin && (
-            <Select name="owner" defaultValue={searchParams.owner ?? ""} className="w-auto max-w-[260px]">
-              <option value="">Mọi người dùng</option>
-              {owners.map((o) => <option key={o.id} value={o.id}>{o.name} (@{o.username})</option>)}
-            </Select>
-          )}
-          <button className={buttonClass("secondary")}>Lọc</button>
-        </form>
-      </Card>
+        )}
+        <button className={buttonClass("ghost")}>Lọc</button>
+        {filtered && <Link href="/worksheets" className="text-[13px] text-zinc-500 hover:text-primary">Xoá lọc</Link>}
+      </FilterBar>
 
-      <Card className="overflow-x-auto p-0">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Tiêu đề</th>
-              <th className="px-4 py-3">Trình độ</th>
-              <th className="px-4 py-3">Loại</th>
-              {isAdmin && <th className="px-4 py-3">Người tạo</th>}
-              <th className="px-4 py-3">Cập nhật</th>
-              <th className="px-4 py-3 text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
+      <Card flush className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
               <tr>
-                <td colSpan={isAdmin ? 6 : 5} className="px-4 py-10 text-center text-slate-500">Chưa có worksheet nào.</td>
+                <Th>Tiêu đề</Th>
+                <Th>Trình độ</Th>
+                <Th>Loại</Th>
+                {isAdmin && <Th>Người tạo</Th>}
+                <Th>Cập nhật</Th>
+                <Th />
               </tr>
-            )}
-            {rows.map((r) => (
-              <tr key={r.id} className="border-0 border-t border-solid border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3">
-                  <Link href={`/worksheets/${r.id}`} className="font-semibold text-sky-700 hover:underline">{r.title}</Link>
-                  {r.topic && <div className="text-xs text-slate-500">{r.topic}</div>}
-                </td>
-                <td className="px-4 py-3"><Badge tone="sky">{r.level}</Badge></td>
-                <td className="px-4 py-3">{r.type === "grammar" ? "Ngữ pháp" : r.type === "vocabulary" ? "Từ vựng" : r.type}</td>
-                {isAdmin && (
-                  <td className="px-4 py-3">
-                    <div>{r.ownerName}</div>
-                    <div className="text-xs text-slate-500">@{r.ownerUsername}</div>
-                  </td>
-                )}
-                <td className="whitespace-nowrap px-4 py-3 text-slate-600">{r.updatedAt.toLocaleString("vi-VN")}</td>
-                <td className="px-4 py-3">
-                  <div className="flex justify-end gap-1">
-                    <Link href={`/worksheets/${r.id}`} className={buttonClass("secondary", "sm")}>Mở</Link>
-                    <form action={duplicateWorksheet}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <SubmitButton variant="secondary" size="sm" pendingText="...">Nhân bản</SubmitButton>
-                    </form>
-                    <form action={deleteWorksheet}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <SubmitButton variant="danger" size="sm" pendingText="..." confirm={`Xoá worksheet "${r.title}"?`}>
-                        Xoá
-                      </SubmitButton>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <EmptyRow colSpan={cols}>
+                  {filtered ? "Không có worksheet khớp bộ lọc." : (
+                    <>Chưa có worksheet nào. <Link href="/" className="font-medium text-primary hover:underline">Tạo worksheet đầu tiên →</Link></>
+                  )}
+                </EmptyRow>
+              )}
+              {rows.map((r) => (
+                <tr key={r.id} className="group transition-colors hover:bg-zinc-50">
+                  <Td className="max-w-[360px]">
+                    <Link href={`/worksheets/${r.id}`} className="block truncate font-medium text-zinc-900 group-hover:text-primary">{r.title}</Link>
+                    {r.topic && <div className="truncate text-xs text-zinc-500">{r.topic}</div>}
+                  </Td>
+                  <Td><Badge tone="primary" mono>{r.level}</Badge></Td>
+                  <Td className="text-zinc-600">{r.type === "grammar" ? "Ngữ pháp" : r.type === "vocabulary" ? "Từ vựng" : r.type}</Td>
+                  {isAdmin && (
+                    <Td>
+                      <div className="text-zinc-900">{r.ownerName}</div>
+                      <div className="font-mono text-xs text-zinc-500">@{r.ownerUsername}</div>
+                    </Td>
+                  )}
+                  <Td className="whitespace-nowrap text-zinc-500">{r.updatedAt.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}</Td>
+                  <Td>
+                    <div className="flex justify-end gap-1 opacity-70 transition-opacity group-hover:opacity-100">
+                      <Link href={`/worksheets/${r.id}`} className={buttonClass("ghost", "sm")}>Mở</Link>
+                      <form action={duplicateWorksheet}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <SubmitButton variant="ghost" size="sm" pendingText="" title="Nhân bản" icon={<Copy size={14} />}>{null}</SubmitButton>
+                      </form>
+                      <form action={deleteWorksheet}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <SubmitButton
+                          variant="ghost" size="sm" pendingText="" title="Xoá" icon={<Trash2 size={14} className="text-danger" />}
+                          confirm={`Xoá worksheet "${r.title}"?`}
+                        >
+                          {null}
+                        </SubmitButton>
+                      </form>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={page} total={total} pageSize={PAGE_SIZE} searchParams={searchParams} />
       </Card>
-      <Pagination page={page} total={total} pageSize={PAGE_SIZE} searchParams={searchParams} />
-    </main>
+    </Page>
   );
 }
