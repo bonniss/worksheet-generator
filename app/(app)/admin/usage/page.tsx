@@ -19,6 +19,7 @@ type Search = { range?: string; user?: string; model?: string; status?: string; 
 
 const PURPOSE_LABEL: Record<string, string> = {
   structure: "Khung", learn: "Learn", exercise: "Bài tập", regen_exercise: "Gen lại bài", regen_learn: "Gen lại Learn",
+  prompt_ideas: "Gợi ý prompt", sync_vocab: "Đồng bộ từ vựng",
 };
 const STATUS_TONE = { ok: "success", error: "danger", blocked: "warning" } as const;
 const STATUS_LABEL: Record<string, string> = { ok: "OK", error: "Lỗi", blocked: "Bị chặn" };

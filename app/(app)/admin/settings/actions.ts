@@ -68,6 +68,7 @@ export async function resetModel(): Promise<SettingsState> {
 const limitsSchema = z.object({
   runsPerDay: z.coerce.number().int("Phải là số nguyên").min(0).max(1000),
   regensPerDay: z.coerce.number().int("Phải là số nguyên").min(0).max(5000),
+  helpersPerDay: z.coerce.number().int("Phải là số nguyên").min(0).max(5000),
   // Trống = không giới hạn
   systemUsdPerDay: z.union([z.literal(""), z.coerce.number().min(0.01, "Tối thiểu $0.01").max(10000)]),
 });
@@ -77,15 +78,51 @@ export async function saveLimits(_prev: SettingsState, formData: FormData): Prom
   const parsed = limitsSchema.safeParse({
     runsPerDay: formData.get("runsPerDay"),
     regensPerDay: formData.get("regensPerDay"),
+    helpersPerDay: formData.get("helpersPerDay"),
     systemUsdPerDay: String(formData.get("systemUsdPerDay") ?? "").trim(),
   });
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const { runsPerDay, regensPerDay, systemUsdPerDay } = parsed.data;
+  const { runsPerDay, regensPerDay, helpersPerDay, systemUsdPerDay } = parsed.data;
   await setSetting(SETTING_KEYS.runsPerDay, String(runsPerDay), me.id);
   await setSetting(SETTING_KEYS.regensPerDay, String(regensPerDay), me.id);
+  await setSetting(SETTING_KEYS.helpersPerDay, String(helpersPerDay), me.id);
   if (systemUsdPerDay === "") await deleteSetting(SETTING_KEYS.systemUsdPerDay);
   else await setSetting(SETTING_KEYS.systemUsdPerDay, String(systemUsdPerDay), me.id);
   revalidatePath("/admin/settings");
   revalidatePath("/admin/usage");
   return { success: "Đã lưu hạn mức." };
+}
+
+/* ===== Model cho tác vụ phụ ===== */
+
+export async function saveLightModel(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
+  const me = await requireAdmin();
+  const raw = String(formData.get("lightModel") ?? "").trim();
+  if (!raw) {
+    await deleteSetting(SETTING_KEYS.lightModel);
+    revalidatePath("/admin/settings");
+    return { success: "Tác vụ phụ dùng chung model chính." };
+  }
+  const parsed = modelSchema.safeParse(raw);
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  await setSetting(SETTING_KEYS.lightModel, parsed.data, me.id);
+  revalidatePath("/admin/settings");
+  return { success: `Tác vụ phụ chuyển sang ${parsed.data}.` };
+}
+
+/* ===== Kiểm tra level từ vựng khi sinh ===== */
+
+const genSchema = z.object({
+  vocabRetryMax: z.coerce.number().int("Phải là số nguyên").min(1, "Tối thiểu 1 lần").max(3, "Tối đa 3 lần"),
+});
+
+export async function saveGenSettings(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
+  const me = await requireAdmin();
+  const parsed = genSchema.safeParse({ vocabRetryMax: formData.get("vocabRetryMax") });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  await setSetting(SETTING_KEYS.vocabAutoRetry, formData.get("vocabAutoRetry") ? "1" : "0", me.id);
+  await setSetting(SETTING_KEYS.vocabRetryMax, String(parsed.data.vocabRetryMax), me.id);
+  await setSetting(SETTING_KEYS.sendWordlist, formData.get("sendWordlist") ? "1" : "0", me.id);
+  revalidatePath("/admin/settings");
+  return { success: "Đã lưu cấu hình kiểm tra từ vựng." };
 }

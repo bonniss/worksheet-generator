@@ -1,5 +1,8 @@
 import WorksheetGenerator from "@/components/WorksheetGenerator";
+import { getGenSettings } from "@/lib/settings";
 
-export default function Page() {
-  return <WorksheetGenerator />;
+export const dynamic = "force-dynamic";
+
+export default async function Page() {
+  return <WorksheetGenerator gen={await getGenSettings()} />;
 }

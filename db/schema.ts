@@ -1,5 +1,5 @@
 import { boolean, customType, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
-import type { SavedProject } from "@/lib/worksheet/types";
+import type { AiDraft, SavedProject } from "@/lib/worksheet/types";
 
 export const roleEnum = pgEnum("role", ["admin", "user"]);
 // private: chỉ chủ sở hữu (và admin); public: mọi người trong hệ thống xem/in/nhân bản được
@@ -49,6 +49,8 @@ export const worksheets = pgTable(
     topic: text("topic").notNull().default(""),
     data: jsonb("data").$type<SavedProject>().notNull(),
     visibility: visibilityEnum("visibility").notNull().default("private"),
+    // Bản nháp gốc AI sinh ra (từng phần, cập nhật khi gen lại phần đó) — sửa tay không bao giờ ghi đè. Để so với bản giáo viên chốt.
+    aiDraft: jsonb("ai_draft").$type<AiDraft>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

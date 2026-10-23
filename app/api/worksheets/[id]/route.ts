@@ -7,7 +7,8 @@ import { apiUser, jsonError } from "@/lib/auth/api";
 import { canEditWorksheet, canViewWorksheet } from "@/lib/auth/guards";
 import type { SessionUser } from "@/lib/auth/session";
 import { isUuid, worksheetPayloadSchema } from "@/lib/validators";
-import { worksheetColumns } from "@/lib/worksheets";
+import { mergeAiDraft, worksheetColumns } from "@/lib/worksheets";
+import type { AiDraftPatch } from "@/lib/worksheet/types";
 
 type Ctx = { params: { id: string } };
 
@@ -42,7 +43,11 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
   if (!parsed.success) return jsonError(400, "Dữ liệu worksheet không hợp lệ");
   await db
     .update(worksheets)
-    .set({ ...worksheetColumns(parsed.data.data), updatedAt: new Date() })
+    .set({
+      ...worksheetColumns(parsed.data.data),
+      ...(parsed.data.aiDraft ? { aiDraft: mergeAiDraft(r.row.aiDraft, parsed.data.aiDraft as AiDraftPatch) } : {}),
+      updatedAt: new Date(),
+    })
     .where(eq(worksheets.id, r.row.id));
   return NextResponse.json({ ok: true });
 }

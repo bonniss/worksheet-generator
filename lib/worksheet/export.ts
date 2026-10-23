@@ -1,6 +1,6 @@
 import type { Cfg, Exercise, Item, Learn, Level, SavedProject, Theme, Worksheet } from "./types";
 import { inlineImagesInDom, inlineRemoteImages } from "./images";
-import { cleanOpt, esc, grammarBlocks } from "./utils";
+import { cleanOpt, esc, grammarBlocks, stripNum } from "./utils";
 
 // markup **đậm** *nghiêng* ==tô sáng== và ___ -> gạch chân, cho Word
 export function richToHtml(s: unknown): string {
@@ -10,6 +10,13 @@ export function richToHtml(s: unknown): string {
     .replace(/\*([^*]+)\*/g, "<i>$1</i>");
   t = t.replace(/___/g, "________");
   return t.replace(/\n/g, "<br>");
+}
+
+/** Hộp từ cho sẵn: khung viền, các từ dàn hàng ngang (Word tự xuống dòng) */
+export function wordBoxHtml(ex: Exercise, line = "#999"): string {
+  const words = (ex.wordBox || []).map((w) => String(w).trim()).filter(Boolean);
+  if (!words.length) return "";
+  return `<table style="border-collapse:collapse;margin:2px 0 10px"><tr><td style="border:1.5px solid ${line};border-radius:8px;padding:6px 12px;font-size:11pt;line-height:1.8">${words.map(esc).join("&nbsp;&nbsp;&nbsp;&nbsp;")}</td></tr></table>`;
 }
 
 export function exerciseToHtml(ex: Exercise, idx: number, showAnswers: boolean, theme: Theme): string {
@@ -87,12 +94,13 @@ export function exerciseToHtml(ex: Exercise, idx: number, showAnswers: boolean, 
     }).join("");
   }
 
-  return `<div style="margin:14px 0"><div style="font-size:13pt;font-weight:bold;color:${theme.ink}">${idx}. ${esc(ex.title)}</div>${instr}${body}</div>`;
+  return `<div style="margin:14px 0"><div style="font-size:13pt;font-weight:bold;color:${theme.ink}">${idx}. ${esc(stripNum(ex.title))}</div>${instr}${wordBoxHtml(ex)}${body}</div>`;
 }
 
 export function buildDocHtml(ws: Worksheet, cfg: Cfg, theme: Theme, showAnswers: boolean): string {
   const learn: Partial<Learn> = ws.learn || {};
-  let learnHtml = `<div style="font-size:14pt;font-weight:bold;color:${theme.ink};margin-top:10px">${esc(theme.learnTitle)}</div>`;
+  // Phần Learn không đánh số — gắn ★ thay cho số
+  let learnHtml = `<div style="font-size:14pt;font-weight:bold;color:${theme.ink};margin-top:10px">★ ${esc(theme.learnTitle)}</div>`;
   // vocab
   if ((learn.vocab || []).length) {
     learnHtml += `<div style="margin:6px 0"><b>Vocabulary:</b> ` +
@@ -161,7 +169,7 @@ export function buildPrintHtml(ws: Worksheet, cfg: Cfg, theme: Theme, showAnswer
     }
   });
   const learnBlock = `<div class="sec" style="border:2px solid ${theme.line};border-radius:14px;padding:14px;margin-bottom:14px">
-    <div style="font-weight:bold;color:${theme.ink};font-size:15pt;margin-bottom:8px">${esc(theme.learnTitle)}</div>
+    <div style="font-weight:bold;color:${theme.ink};font-size:15pt;margin-bottom:8px">★ ${esc(theme.learnTitle)}</div>
     ${vocabHtml}
     <div style="background:${theme.softBg};border-radius:10px;padding:12px 14px;position:relative">${rulesHtml}${mascot ? `<img src="${mascot}" style="position:absolute;right:6px;bottom:0;height:80px">` : ""}</div>
   </div>`;
@@ -208,7 +216,7 @@ export function richToHtmlColor(s: unknown): string {
 export function exerciseToHtmlColor(ex: Exercise, idx: number, showAnswers: boolean, theme: Theme): string {
   const A = (n: number) => String.fromCharCode(65 + n);
   const a = (n: number) => String.fromCharCode(97 + n);
-  const title = `<div style="font-weight:bold;color:${theme.ink};font-size:13pt">${idx}. ${esc(ex.title)}</div><div style="color:#555;font-size:11pt;margin:2px 0 8px">${esc(ex.instruction || "")}</div>`;
+  const title = `<div style="font-weight:bold;color:${theme.ink};font-size:13pt">${idx}. ${esc(stripNum(ex.title))}</div><div style="color:#555;font-size:11pt;margin:2px 0 8px">${esc(ex.instruction || "")}</div>${wordBoxHtml(ex, theme.line)}`;
   let body = "";
   if (ex.passage && ex.type !== "error_passage") {
     body += `<div style="background:${theme.softBg};border:1px solid ${theme.line};border-radius:8px;padding:10px;margin-bottom:8px">${richToHtmlColor(ex.passage)}</div>`;

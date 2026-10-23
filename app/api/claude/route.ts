@@ -7,10 +7,13 @@ import { estimateCost } from "@/lib/ai-pricing";
 import { logAiCall, type AiCallRow } from "@/lib/ai-log";
 import { anthropicClient } from "@/lib/anthropic";
 import { apiUser, jsonError } from "@/lib/auth/api";
-import { getAiConfig } from "@/lib/settings";
+import { getAiConfig, getGenSettings } from "@/lib/settings";
 import { checkQuota } from "@/lib/usage";
-import { AI_PURPOSES } from "@/lib/worksheet/ai-purposes";
+import { AI_PURPOSES, HELPER_PURPOSES, type AiPurpose } from "@/lib/worksheet/ai-purposes";
+import lexicon from "@/lib/worksheet/data/lexicon.json";
 import { SYSTEM_PROMPT } from "@/lib/worksheet/prompts";
+import { LEVELS } from "@/lib/worksheet/themes";
+import { allowedWords, type LexiconData } from "@/lib/worksheet/vocab";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // Vercel: tối đa 60s cho một lượt
@@ -20,13 +23,32 @@ const MAX_TOKENS = 4096;
 // 424: lỗi cấu hình phía server — tránh 401/403 vì client hiểu đó là "phiên đăng nhập hết hạn"
 const CONFIG_ERROR = 424;
 
+// Band từ vựng thấp (Pre A1/A1): gửi kèm danh sách từ được phép thành 1 khối system riêng (cache theo band)
+const WORDLIST_MAX_IDX = 1;
+const wordlistBlocks = new Map<number, string>();
+function wordlistBlock(maxI: number): string {
+  let txt = wordlistBlocks.get(maxI);
+  if (!txt) {
+    txt = `DANH SÁCH TỪ NỘI DUNG ĐƯỢC PHÉP (band từ vựng ≤ ${LEVELS[maxI]}). Ngoài danh sách này chỉ thêm từ chức năng, số, tên riêng; nếu bắt buộc dùng từ ngoài danh sách thì tối đa 1–2 từ, dễ đoán:
+${allowedWords(lexicon as LexiconData, maxI).join(", ")}`;
+    wordlistBlocks.set(maxI, txt);
+  }
+  return txt;
+}
+// Khung worksheet chưa viết nội dung nên không cần danh sách từ
+const NEEDS_WORDLIST: readonly AiPurpose[] = AI_PURPOSES.filter((p) => p !== "structure");
 
 const bodySchema = z.object({
   prompt: z.string().min(1).max(30_000),
   purpose: z.enum(AI_PURPOSES),
   runId: z.uuid(),
   worksheetId: z.uuid().nullish(),
-  meta: z.object({ level: z.string().max(20).optional(), type: z.string().max(30).optional() }).optional(),
+  meta: z.object({
+    level: z.string().max(20).optional(),
+    type: z.string().max(30).optional(),
+    /** chỉ số level từ vựng cao nhất được phép (0 = Pre A1) */
+    vocabMax: z.number().int().min(0).max(LEVELS.length - 1).optional(),
+  }).optional(),
 });
 
 /** Chuyển lỗi SDK thành (status, message) cho client + nhãn lỗi để ghi log. */
@@ -56,16 +78,23 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return jsonError(400, "Yêu cầu không hợp lệ.");
   const { prompt, purpose, runId, worksheetId, meta } = parsed.data;
 
-  const cfg = await getAiConfig();
+  const [cfg, gen] = await Promise.all([getAiConfig(), getGenSettings()]);
   if (!cfg.apiKey) {
     return jsonError(CONFIG_ERROR, "Chưa cấu hình Anthropic API key. Quản trị viên vào Cấu hình AI để thiết lập.");
+  }
+
+  const model = HELPER_PURPOSES.includes(purpose) && cfg.lightModel ? cfg.lightModel : cfg.model;
+  const system: Anthropic.TextBlockParam[] = [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }];
+  const vocabMax = meta?.vocabMax;
+  if (gen.sendWordlist && vocabMax !== undefined && vocabMax <= WORDLIST_MAX_IDX && NEEDS_WORDLIST.includes(purpose)) {
+    system.push({ type: "text", text: wordlistBlock(vocabMax), cache_control: { type: "ephemeral" } });
   }
 
   const started = Date.now();
   const base: AiCallRow = {
     userId: user.id, runId, purpose, worksheetId: worksheetId ?? null,
     level: meta?.level ?? null, type: meta?.type ?? null,
-    model: cfg.model, maxTokens: MAX_TOKENS, promptChars: prompt.length, status: "ok",
+    model, maxTokens: MAX_TOKENS, promptChars: prompt.length, status: "ok",
   };
 
   // Hạn mức theo người / trần chi phí hệ thống — bị chặn thì không gọi Anthropic
@@ -77,10 +106,10 @@ export async function POST(req: NextRequest) {
 
   const stream = anthropicClient(cfg.apiKey, { timeout: 58_000 }).messages.stream(
     {
-      model: cfg.model,
+      model,
       max_tokens: MAX_TOKENS,
       // Phần cố định dùng chung → cache (model/prefix dưới ngưỡng tối thiểu thì API tự bỏ qua, xem cache_* trong log)
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      system,
       messages: [{ role: "user", content: prompt }],
     },
     { signal: req.signal },
@@ -90,7 +119,7 @@ export async function POST(req: NextRequest) {
   try {
     await stream.withResponse();
   } catch (e) {
-    const d = describeError(e, cfg.model);
+    const d = describeError(e, model);
     // Khi lỗi, request id nằm trên object lỗi của SDK (header request-id của Anthropic)
     const requestId = (e instanceof Anthropic.APIError ? e.requestID : null) ?? stream.request_id ?? null;
     void logAiCall({ ...base, status: "error", errorType: d.errorType, httpStatus: d.status, durationMs: Date.now() - started, requestId });
@@ -123,7 +152,7 @@ export async function POST(req: NextRequest) {
           });
         })
         .catch((e: unknown) => {
-          const d = describeError(e, cfg.model);
+          const d = describeError(e, model);
           send({ t: "error", status: d.status, message: d.message });
           // Lỗi giữa chừng vẫn có thể đã tiêu token — ghi lại phần usage đã biết
           const u = stream.currentMessage?.usage;
@@ -132,7 +161,7 @@ export async function POST(req: NextRequest) {
             inputTokens: u?.input_tokens ?? null, outputTokens: u?.output_tokens ?? null,
             durationMs: Date.now() - started, ttftMs: ttft,
             requestId: (e instanceof Anthropic.APIError ? e.requestID : null) ?? stream.request_id ?? null,
-            costUsd: u ? (estimateCost(cfg.model, u)?.toFixed(6) ?? null) : null,
+            costUsd: u ? (estimateCost(model, u)?.toFixed(6) ?? null) : null,
           });
         })
         .finally(() => controller.close());

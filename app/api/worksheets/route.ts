@@ -4,7 +4,8 @@ import { db } from "@/db";
 import { worksheets } from "@/db/schema";
 import { apiUser, jsonError } from "@/lib/auth/api";
 import { worksheetPayloadSchema } from "@/lib/validators";
-import { worksheetColumns } from "@/lib/worksheets";
+import { mergeAiDraft, worksheetColumns } from "@/lib/worksheets";
+import type { AiDraftPatch } from "@/lib/worksheet/types";
 
 // Danh sách (không kèm data). Admin thấy tất cả, user chỉ thấy của mình.
 export async function GET() {
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return jsonError(400, "Dữ liệu worksheet không hợp lệ");
   const [row] = await db
     .insert(worksheets)
-    .values({ ownerId: user.id, ...worksheetColumns(parsed.data.data) })
+    .values({ ownerId: user.id, ...worksheetColumns(parsed.data.data), aiDraft: mergeAiDraft(null, parsed.data.aiDraft as AiDraftPatch | undefined) })
     .returning({ id: worksheets.id });
   return NextResponse.json({ id: row.id }, { status: 201 });
 }

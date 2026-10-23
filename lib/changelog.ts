@@ -13,6 +13,31 @@ export type Release = {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "2.6",
+    date: "2026-10-23",
+    title: "Từ vựng vừa sức học sinh, sửa bài nhẹ tay hơn",
+    summary: "Bạn chọn level từ vựng riêng và AI sẽ giữ từ trong level đó. Gen lại, sắp xếp, hoàn tác đều linh hoạt hơn trước.",
+    changes: [
+      { tag: "new", text: "Chọn level từ vựng riêng với level ngữ pháp, chọn được nhiều level cùng lúc (ví dụ ngữ pháp A1 nhưng từ vựng A1 + A2). Cả worksheet chỉ dùng từ trong các level bạn chọn." },
+      { tag: "new", text: "Gợi ý chủ điểm ngay dưới ô Chủ điểm, đúng với level đang chọn. Bấm để chọn, bấm 🔀 Gợi ý khác để xem thêm, rê chuột lên để xem chủ điểm đó gồm những gì." },
+      { tag: "new", text: "Nút 💡 Gợi ý prompt: đưa ra 3 tình huống cụ thể, vừa sức học sinh. Thích cái nào thì bấm vào để thêm vào ô mô tả." },
+      { tag: "new", text: "Nhập Tổng số câu cho cả worksheet, hệ thống tự chia đều cho các bài." },
+      { tag: "new", text: "Nút 🔍 Quét từ vựng: chỉ ra từ nào khó hơn level, nằm ở bài nào câu nào, và cho gen lại đúng bài đó. Nếu còn từ khó, worksheet hiện cảnh báo màu vàng ngay sau khi tạo xong." },
+      { tag: "new", text: "Mỗi từ vựng trọng tâm có nhãn level nhỏ bên cạnh (xanh là vừa, đỏ là khó hơn). Nhãn này chỉ hiện trên màn hình, không in ra." },
+      { tag: "new", text: "Nếu từ vựng trọng tâm chưa có trong bài tập nào, bấm 🔁 Đồng bộ từ vựng theo bài tập để chọn lại cho khớp." },
+      { tag: "new", text: "Hộp từ cho sẵn dùng được ở mọi dạng bài: gõ tay hoặc bấm lấy từ đáp án, xáo trộn hay xếp A→Z tuỳ ý. Hộp từ có cả khi in và khi tải Word." },
+      { tag: "new", text: "Gen lại chọn được phạm vi: phần Learn có thể chỉ làm lại ngữ pháp hoặc chỉ từ vựng (ảnh đã chèn vẫn giữ). Ở từng bài, có thể tick giữ những câu ưng ý và chỉ làm lại các câu còn lại, hoặc đổi sang dạng bài khác." },
+      { tag: "new", text: "Nút 🎯 Đổi chủ điểm: tạo lại worksheet với chủ điểm mới mà không phải quay về màn hình đầu." },
+      { tag: "new", text: "Hoàn tác / Làm lại bao nhiêu bước cũng được (Ctrl/⌘ + Z, Ctrl/⌘ + Shift + Z). Lỡ tay tạo lại cả worksheet vẫn lấy lại được bản cũ." },
+      { tag: "new", text: "Đổi thứ tự các bài bằng nút ↑ ↓. Nút ⇅ Sắp xếp để xáo hoặc đảo thứ tự câu, xáo thứ tự đáp án." },
+      { tag: "improved", text: "Phần Learn không đánh số nữa mà có ngôi sao ★, bài tập đánh số từ 1. Tên bài không còn bị lặp số kiểu “1. Exercise 1”." },
+      { tag: "improved", text: "Ô nhập trong khung sửa tự dài ra theo nội dung, không phải kéo mới đọc hết. Bảng biến đổi hiện đủ cả câu." },
+      { tag: "improved", text: "AI viết chữ thường, không tự in đậm lung tung; bạn tự tô đậm chỗ cần nhấn." },
+      { tag: "improved", text: "Từ vựng trọng tâm là những từ bài tập thật sự dùng, không còn liệt kê thuật ngữ ngữ pháp. Bài đọc trong worksheet ngữ pháp hỏi đúng cấu trúc đang học thay vì hỏi nội dung chung chung." },
+      { tag: "admin", text: "Trang Cấu hình AI có thêm: bật/tắt việc tự làm lại bài có từ khó hơn level và số lần làm lại; chọn model riêng (rẻ hơn) và đặt hạn mức riêng cho Gợi ý prompt và Đồng bộ từ vựng." },
+    ],
+  },
+  {
     version: "2.5",
     date: "2026-09-25",
     title: "Tự lưu, in PDF một chạm, thư viện chung",

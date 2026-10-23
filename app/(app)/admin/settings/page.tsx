@@ -1,11 +1,11 @@
 import { Suspense } from "react";
-import { Cpu, Gauge, KeyRound } from "lucide-react";
+import { BookCheck, Cpu, Gauge, KeyRound } from "lucide-react";
 import { Alert, Badge, Card, CardTitle, IconTile, Page, PageHeader, Skeleton, Spinner } from "@/components/ui";
 import { FieldSkeleton } from "@/components/ui/skeletons";
 import { listModels, type ModelOption } from "@/lib/anthropic";
 import { requireAdmin } from "@/lib/auth/session";
-import { DEFAULT_MODEL, getAiLimits, getAiSettingsView, type Source } from "@/lib/settings";
-import { ApiKeyForm, LimitsForm, ModelForm } from "./forms";
+import { DEFAULT_MODEL, getAiLimits, getAiSettingsView, getGenSettings, type Source } from "@/lib/settings";
+import { ApiKeyForm, GenSettingsForm, LightModelForm, LimitsForm, ModelForm } from "./forms";
 
 export const metadata = { title: "Cấu hình AI" };
 export const dynamic = "force-dynamic";
@@ -39,10 +39,10 @@ function Current({ value, source, meta }: {
   );
 }
 
-type ModelPickerProps = { apiKey: string | null; current: string; fallbackModel: string; hasDbModel: boolean };
+type ModelPickerProps = { apiKey: string | null; current: string; fallbackModel: string; hasDbModel: boolean; lightModel: string | null };
 
 /** Gọi Models API (có thể mất vài giây) — tách riêng + Suspense để phần còn lại của trang hiện ngay. */
-async function ModelPicker({ apiKey, ...rest }: ModelPickerProps) {
+async function ModelPicker({ apiKey, lightModel, ...rest }: ModelPickerProps) {
   let models: ModelOption[] = [];
   let failed = false;
   if (apiKey) {
@@ -56,6 +56,9 @@ async function ModelPicker({ apiKey, ...rest }: ModelPickerProps) {
     <>
       {failed && <div className="mb-5"><Alert kind="warning">Không tải được danh sách model. Có thể nhập model id thủ công.</Alert></div>}
       <ModelForm models={models} {...rest} />
+      <div className="mt-6 border-0 border-t border-solid border-zinc-100 pt-6">
+        <LightModelForm models={models} current={lightModel} mainModel={rest.current} />
+      </div>
     </>
   );
 }
@@ -76,7 +79,7 @@ function ModelPickerFallback() {
 
 export default async function SettingsPage() {
   await requireAdmin();
-  const [{ config, view }, limits] = await Promise.all([getAiSettingsView(), getAiLimits()]);
+  const [{ config, view }, limits, gen] = await Promise.all([getAiSettingsView(), getAiLimits(), getGenSettings()]);
 
   return (
     <Page>
@@ -107,12 +110,17 @@ export default async function SettingsPage() {
               current={view.model}
               fallbackModel={view.envModel || DEFAULT_MODEL}
               hasDbModel={view.modelSource === "db"}
+              lightModel={view.lightModel}
             />
           </Suspense>
         </Card>
         <Card className="lg:col-span-2">
           <CardTitle icon={<IconTile><Gauge size={18} /></IconTile>} title="Hạn mức sử dụng" sub="Giới hạn lượt dùng AI để kiểm soát chi phí." />
           <LimitsForm {...limits} />
+        </Card>
+        <Card className="lg:col-span-2">
+          <CardTitle icon={<IconTile tone="accent"><BookCheck size={18} /></IconTile>} title="Kiểm tra level từ vựng" sub="Giữ từ vựng của worksheet trong level đã chọn." />
+          <GenSettingsForm {...gen} />
         </Card>
       </div>
     </Page>

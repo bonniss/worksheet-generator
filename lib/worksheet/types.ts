@@ -30,6 +30,15 @@ export interface PlanRow {
   type: string;
 }
 
+/** Chủ điểm chọn từ taxonomy (chip gợi ý) — gửi phạm vi + ví dụ cho AI */
+export interface TopicMeta {
+  id: string;
+  en: string;
+  vi: string;
+  scope: string;
+  examples: string;
+}
+
 export interface Cfg {
   type: FocusType;
   topic: string;
@@ -38,6 +47,12 @@ export interface Cfg {
   notes: string;
   autoMode: boolean;
   plan: PlanRow[];
+  /** Level từ vựng (chọn nhiều); rỗng/thiếu = theo level chính */
+  vocabLevels?: Level[];
+  /** Tổng số câu cả worksheet; thiếu/null = AI tự quyết */
+  totalQ?: number | null;
+  /** Có khi chủ điểm lấy từ chip taxonomy; sửa tay chủ điểm thì bỏ */
+  topicMeta?: TopicMeta | null;
 }
 
 /** Kế hoạch 1 bài do AI trả về ở bước lập khung */
@@ -68,6 +83,8 @@ export interface Item {
 }
 
 export interface Exercise {
+  /** id ổn định để đối chiếu với bản nháp AI (E2); worksheet cũ không có */
+  id?: string;
   stage: Stage;
   type: string;
   title: string;
@@ -76,6 +93,8 @@ export interface Exercise {
   columns?: string[];
   examples?: string[][];
   items: Item[];
+  /** Hộp từ cho sẵn, hiện dưới instruction */
+  wordBox?: string[];
   count?: number;
   _failed?: boolean;
   /** Đang được AI viết (stream) — chỉ tồn tại trên màn hình, không lưu */
@@ -124,6 +143,32 @@ export interface Worksheet {
   learn: Learn | null;
   /** null = bài đang được soạn */
   exercises: (Exercise | null)[];
+}
+
+/**
+ * Bản nháp gốc AI sinh ra — lưu ở cột riêng (worksheets.ai_draft), chỉ AI ghi, sửa tay không ghi đè.
+ * Dùng để so với bản giáo viên chốt (phần nào hay bị viết lại → cải thiện prompt).
+ */
+export interface AiDraft {
+  v: 1;
+  createdAt: string;
+  updatedAt: string;
+  title?: string;
+  brief?: string;
+  learn?: { data: Partial<Learn>; at: string } | null;
+  /** theo Exercise.id */
+  exercises: Record<string, { data: Exercise; at: string; /** gen lại "chỉ các câu": vị trí các câu giáo viên giữ nguyên */ keptItems?: number[] }>;
+}
+
+/** Phần nháp AI mới phát sinh, gửi kèm lần lưu kế tiếp rồi server gộp vào AiDraft */
+export interface AiDraftPatch {
+  /** tạo worksheet mới / đổi chủ điểm: bỏ bản nháp cũ */
+  reset?: boolean;
+  title?: string;
+  brief?: string;
+  /** gộp nông vào learn cũ (gen lại chỉ ngữ pháp / chỉ từ vựng) */
+  learn?: Partial<Learn>;
+  exercises?: Record<string, { data: Exercise; keptItems?: number[] }>;
 }
 
 export interface SavedProject {
