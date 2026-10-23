@@ -9,3 +9,6 @@ out
 *.tsbuildinfo
 next-env.d.ts
 .neon
+
+# tài liệu tham chiếu có bản quyền
+.specs/resources/ext/

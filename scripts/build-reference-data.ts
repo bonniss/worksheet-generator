@@ -6,6 +6,8 @@ import { join } from "node:path";
 import Papa from "papaparse";
 
 const SRC = join(process.cwd(), ".specs", "resources");
+// EVP + wordlist Cambridge: có bản quyền, không commit (.gitignore) — lấy riêng từ team rồi đặt vào đây
+const EXT = join(SRC, "ext");
 const OUT = join(process.cwd(), "lib", "worksheet", "data");
 const LEVELS = ["Pre A1", "A1", "A2", "B1", "B2", "C1", "C2"] as const;
 
@@ -64,7 +66,7 @@ function expandPhrase(raw: string): string[] {
 }
 
 function addEvp() {
-  const rows = Papa.parse<Record<string, string>>(readFileSync(join(SRC, "evp.csv"), "utf8").replace(/^﻿/, ""), {
+  const rows = Papa.parse<Record<string, string>>(readFileSync(join(EXT, "evp.csv"), "utf8").replace(/^﻿/, ""), {
     header: true,
     skipEmptyLines: true,
   }).data;
@@ -96,7 +98,7 @@ const YLE = [
 ];
 
 function parseYle() {
-  const text = execFileSync("pdftotext", ["-layout", "-enc", "UTF-8", join(SRC, "506166-starters-movers-flyers-word-list-2018.pdf"), "-"], {
+  const text = execFileSync("pdftotext", ["-layout", "-enc", "UTF-8", join(EXT, "506166-starters-movers-flyers-word-list-2018.pdf"), "-"], {
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
   });
