@@ -2,10 +2,12 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useFormState } from "react-dom";
 import { PlugZap, RotateCcw, Save, Trash2 } from "lucide-react";
-import { Alert, Button, Field, Input, Select } from "@/components/ui";
+import { Alert, Button, Checkbox, Field, Input, Select } from "@/components/ui";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 import type { ModelOption } from "@/lib/anthropic";
-import { clearApiKey, resetModel, saveApiKey, saveLimits, saveModel, testApiKey, type SettingsState } from "./actions";
+import {
+  clearApiKey, resetModel, saveApiKey, saveGenSettings, saveLightModel, saveLimits, saveModel, testApiKey, type SettingsState,
+} from "./actions";
 
 function Feedback({ state }: { state: SettingsState }) {
   if (state.error) return <Alert>{state.error}</Alert>;
@@ -135,17 +137,22 @@ export function ModelForm({
   );
 }
 
-export function LimitsForm({ runsPerDay, regensPerDay, systemUsdPerDay }: { runsPerDay: number; regensPerDay: number; systemUsdPerDay: number | null }) {
+export function LimitsForm({ runsPerDay, regensPerDay, helpersPerDay, systemUsdPerDay }: {
+  runsPerDay: number; regensPerDay: number; helpersPerDay: number; systemUsdPerDay: number | null;
+}) {
   const [state, action] = useFormState<SettingsState, FormData>(saveLimits, {});
   return (
     <form action={action} className="flex flex-col gap-5">
       <Feedback state={state} />
-      <div className="grid gap-5 sm:grid-cols-3">
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Lượt tạo worksheet / người / ngày" hint="Mỗi lần bấm Tạo worksheet.">
           <Input name="runsPerDay" type="number" min={0} max={1000} defaultValue={runsPerDay} required />
         </Field>
         <Field label="Lượt gen lại / người / ngày" hint="Gen lại 1 bài hoặc phần Learn.">
           <Input name="regensPerDay" type="number" min={0} max={5000} defaultValue={regensPerDay} required />
+        </Field>
+        <Field label="Lượt gợi ý / đồng bộ / người / ngày" hint="💡 Gợi ý prompt và 🔁 Đồng bộ từ vựng.">
+          <Input name="helpersPerDay" type="number" min={0} max={5000} defaultValue={helpersPerDay} required />
         </Field>
         <Field label="Trần chi phí toàn hệ thống / ngày (USD)" optional hint="Để trống = không giới hạn.">
           <Input name="systemUsdPerDay" type="number" min={0.01} step={0.01} defaultValue={systemUsdPerDay ?? ""} placeholder="Không giới hạn" />
@@ -154,6 +161,58 @@ export function LimitsForm({ runsPerDay, regensPerDay, systemUsdPerDay }: { runs
       <p className="-mt-1 text-xs text-zinc-500">Admin không bị giới hạn. Có thể đặt hạn mức riêng cho từng người ở trang chi tiết tài khoản. Hạn mức làm mới lúc 0h (giờ Việt Nam).</p>
       <div className="flex justify-end border-0 border-t border-solid border-zinc-100 pt-5">
         <SubmitButton pendingText="Đang lưu..." icon={<Save size={16} />}>Lưu hạn mức</SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+/** Model cho tác vụ phụ — thường chọn model rẻ hơn vì nội dung ngắn, không vào thẳng worksheet */
+export function LightModelForm({ current, models, mainModel }: { current: string | null; models: ModelOption[]; mainModel: string }) {
+  const [state, action] = useFormState<SettingsState, FormData>(saveLightModel, {});
+  const inList = !current || models.some((m) => m.id === current);
+  return (
+    <form action={action} className="flex flex-col gap-5">
+      <Feedback state={state} />
+      <Field label="Model cho tác vụ phụ" hint="Dùng cho 💡 Gợi ý prompt và 🔁 Đồng bộ từ vựng.">
+        {models.length > 0 && inList ? (
+          <Select name="lightModel" defaultValue={current ?? ""} className="font-mono">
+            <option value="">Giống model chính ({mainModel})</option>
+            {models.map((m) => <option key={m.id} value={m.id}>{m.name} — {m.id}</option>)}
+          </Select>
+        ) : (
+          <Input name="lightModel" defaultValue={current ?? ""} placeholder={`Để trống = giống model chính (${mainModel})`} spellCheck={false} autoCapitalize="none" className="font-mono" />
+        )}
+      </Field>
+      <div className="flex justify-end border-0 border-t border-solid border-zinc-100 pt-5">
+        <SubmitButton pendingText="Đang lưu..." icon={<Save size={16} />}>Lưu</SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+export function GenSettingsForm({ vocabAutoRetry, vocabRetryMax, sendWordlist }: { vocabAutoRetry: boolean; vocabRetryMax: number; sendWordlist: boolean }) {
+  const [state, action] = useFormState<SettingsState, FormData>(saveGenSettings, {});
+  const [retry, setRetry] = useState(vocabAutoRetry);
+  return (
+    <form action={action} className="flex flex-col gap-5">
+      <Feedback state={state} />
+      <div className="grid gap-5 sm:grid-cols-2">
+        <div className="flex flex-col gap-4">
+          <Checkbox
+            name="vocabAutoRetry" label="Tự gen lại bài có từ vượt level" checked={retry} onChange={(e) => setRetry(e.target.checked)}
+            hint="Sinh xong mỗi bài, nếu có từ vượt level từ vựng đã chọn thì tự gen lại bài đó, kèm danh sách từ cần tránh. Còn sót thì worksheet hiện cảnh báo."
+          />
+          <Checkbox
+            name="sendWordlist" label="Gửi danh sách từ được phép khi level từ vựng là Pre A1 / A1" defaultChecked={sendWordlist}
+            hint="AI bám từ vựng sát hơn; mỗi lượt gọi tốn thêm khoảng 3–5 nghìn token đầu vào (được cache)."
+          />
+        </div>
+        <Field label="Số lần tự gen lại tối đa mỗi bài" hint="Mỗi lần là 1 lượt gọi AI, tính vào lượt tạo worksheet đang chạy.">
+          <Input name="vocabRetryMax" type="number" min={1} max={3} defaultValue={vocabRetryMax} readOnly={!retry} required />
+        </Field>
+      </div>
+      <div className="flex justify-end border-0 border-t border-solid border-zinc-100 pt-5">
+        <SubmitButton pendingText="Đang lưu..." icon={<Save size={16} />}>Lưu</SubmitButton>
       </div>
     </form>
   );

@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { aiCalls, users } from "@/db/schema";
 import type { SessionUser } from "./auth/session";
 import { getAiLimits } from "./settings";
-import type { AiPurpose } from "./worksheet/ai-purposes";
+import { HELPER_PURPOSES, type AiPurpose } from "./worksheet/ai-purposes";
 
 export const TZ = "Asia/Ho_Chi_Minh";
 /** 0h hôm nay theo giờ Việt Nam (timestamptz) — hạn mức làm mới mỗi ngày tại đây. */
@@ -60,6 +60,7 @@ async function userLimits(userId: string) {
   return {
     runsPerDay: u?.runs ?? defaults.runsPerDay,
     regensPerDay: u?.regens ?? defaults.regensPerDay,
+    helpersPerDay: defaults.helpersPerDay,
     systemUsdPerDay: defaults.systemUsdPerDay,
     custom: { runs: u?.runs ?? null, regens: u?.regens ?? null },
     defaults: { runs: defaults.runsPerDay, regens: defaults.regensPerDay },
@@ -80,6 +81,13 @@ export async function checkQuota(user: SessionUser, purpose: AiPurpose, runId: s
 
   if (limits.systemUsdPerDay !== null && (await systemCostToday()) >= limits.systemUsdPerDay) {
     return { ok: false, message: "Hệ thống đã dùng hết ngân sách AI của hôm nay. Vui lòng thử lại vào ngày mai hoặc liên hệ quản trị viên." };
+  }
+
+  // Tác vụ phụ (gợi ý prompt, đồng bộ từ vựng): hạn mức riêng, không trừ vào lượt tạo / gen lại
+  if (HELPER_PURPOSES.includes(purpose)) {
+    const { used, sameRun } = await runsToday(user.id, [...HELPER_PURPOSES], runId);
+    if (sameRun || used < limits.helpersPerDay) return { ok: true };
+    return { ok: false, message: `Bạn đã dùng hết ${limits.helpersPerDay} lượt gợi ý / đồng bộ từ vựng hôm nay. Hạn mức được làm mới lúc 0h.` };
   }
 
   let kind: "run" | "regen" = REGEN_PURPOSES.includes(purpose) ? "regen" : "run";

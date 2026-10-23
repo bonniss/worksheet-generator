@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { users, worksheets } from "@/db/schema";
 import { canEditWorksheet, canViewWorksheet } from "@/lib/auth/guards";
 import { requireUser } from "@/lib/auth/session";
+import { getGenSettings } from "@/lib/settings";
 import { isUuid } from "@/lib/validators";
 
 export default async function WorksheetPage({ params }: { params: { id: string } }) {
@@ -18,11 +19,13 @@ export default async function WorksheetPage({ params }: { params: { id: string }
     .limit(1);
   if (!row || !canViewWorksheet(user, row.ws)) notFound();
   const editable = canEditWorksheet(user, row.ws);
+  const gen = await getGenSettings();
   return (
     <WorksheetGenerator
       key={row.ws.id}
       initial={row.ws.data}
       worksheetId={row.ws.id}
+      gen={gen}
       access={{
         readOnly: !editable,
         visibility: row.ws.visibility,

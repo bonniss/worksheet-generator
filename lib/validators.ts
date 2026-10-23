@@ -89,6 +89,16 @@ export const worksheetPayloadSchema = z.object({
       ws: z.object({ title: z.string().optional() }).passthrough(),
     })
     .passthrough(),
+  // Phần nháp AI mới phát sinh kể từ lần lưu trước (xem AiDraftPatch)
+  aiDraft: z
+    .object({
+      reset: z.boolean().optional(),
+      title: z.string().optional(),
+      brief: z.string().optional(),
+      learn: z.object({}).passthrough().optional(),
+      exercises: z.record(z.string().max(64), z.object({ data: z.object({}).passthrough(), keptItems: z.array(z.number().int()).optional() })).optional(),
+    })
+    .optional(),
 });
 
 /** Gom lỗi zod thành { field: message } cho form. */

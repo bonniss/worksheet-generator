@@ -1,0 +1,1 @@
+ALTER TABLE "worksheets" ADD COLUMN "ai_draft" jsonb;

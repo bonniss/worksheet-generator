@@ -4,27 +4,40 @@ import { useCallback, useEffect, useState, useMemo, useRef, type ChangeEvent, ty
 import { useFormStatus } from "react-dom";
 import { duplicateWorksheet } from "@/app/(app)/worksheets/actions";
 import { startNavigationProgress } from "@/components/nav/progress-events";
+import { PromptIdeas, TopicSuggest, VocabLevelPicker, topicLevels } from "@/components/worksheet/setup-panels";
+import {
+  CefrTag, ChangeTopicPanel, RegenBox, ReorderBar, ReorderMenu, ScanPanel, WordBox, WordBoxEditor, type RegenOpts,
+} from "@/components/worksheet/sheet-panels";
+import { AutoTextarea, Spinner, ToolBtn } from "@/components/worksheet/ui";
+import type { GenSettings } from "@/lib/settings";
 import { LOGO_SRC, MASCOT_SRC } from "@/lib/worksheet/assets";
 import type { AiPurpose } from "@/lib/worksheet/ai-purposes";
 import { ApiError, callClaude, type AiCallContext } from "@/lib/worksheet/claude-client";
+import { draftExercise, mergeDraftPatch, newExerciseId } from "@/lib/worksheet/draft";
 import { buildSavedProject, downloadDoc, printWorksheet, saveProject } from "@/lib/worksheet/export";
 import { uploadInlineImages } from "@/lib/worksheet/images";
-import { buildExercisePrompt, buildLearnPrompt, buildStructurePrompt } from "@/lib/worksheet/prompts";
+import {
+  buildExercisePrompt, buildLearnPrompt, buildPromptIdeasPrompt, buildStructurePrompt, buildSyncVocabPrompt, type PromptIdea,
+} from "@/lib/worksheet/prompts";
+import { subToMeta } from "@/lib/worksheet/taxonomy";
 import {
   AGE_BY_LEVEL, LEVELS, STAGE_VI, THEMES, TYPE_META, stagesForLevel, syncPlan, typesForStage,
 } from "@/lib/worksheet/themes";
 import {
   isSavedProject,
-  type Cfg, type Exercise, type ExercisePlan, type GrammarBlock, type Item, type Learn, type Level, type RuleBlock,
+  type AiDraftPatch, type Cfg, type Exercise, type ExercisePlan, type GrammarBlock, type Item, type Learn, type Level, type RuleBlock,
   type SavedProject, type Stage, type StructurePlan, type TableBlock, type Theme, type VocabItem, type Worksheet,
 } from "@/lib/worksheet/types";
-import { cleanOpt, grammarBlocks, makeFiller, shuffle, tableToText, textToTable, type Filler } from "@/lib/worksheet/utils";
+import {
+  applyReorder, cleanOpt, grammarBlocks, makeFiller, moveInArray, renumber, shuffle, stripNum, tableToText, textToTable, type Filler,
+} from "@/lib/worksheet/utils";
+import { effVocabLevels, exerciseTexts, loadLexicon, maxVocabIdx, scanWorksheet, unusedVocab, type Lexicon } from "@/lib/worksheet/vocab";
 
 /**
  * Bài tập dựng từ JSON đang stream dở: chỉ giữ các câu đã viết xong (câu cuối có thể còn dở nên bỏ),
  * đánh dấu _streaming. Trả null nếu chưa đủ dữ liệu để hiển thị an toàn.
  */
-function partialExercise(p: unknown, planRow: ExercisePlan): Exercise | null {
+function partialExercise(p: unknown, planRow: ExercisePlan & { id?: string }): Exercise | null {
   if (!p || typeof p !== "object") return null;
   const d = p as Partial<Exercise>;
   if (!Array.isArray(d.items)) return null;
@@ -48,15 +61,6 @@ function DuplicateButton({ theme }: { theme: Theme }) {
     }}>
       {pending ? <Spinner color="#fff" /> : "📋"} Nhân bản về của tôi để sửa
     </button>
-  );
-}
-
-function Spinner({ color }: { color: string }) {
-  return (
-    <span style={{
-      display: "inline-block", width: 14, height: 14, border: `2px solid ${color}`,
-      borderTopColor: "transparent", borderRadius: "50%", animation: "wsspin 0.8s linear infinite",
-    }} />
   );
 }
 
@@ -91,62 +95,21 @@ function ImageSlot({ desc, size, src }: { desc?: string; size: number; src?: str
   );
 }
 
-function SectionHeader({ num, title, sub, theme, right }: { num: number; title: ReactNode; sub?: ReactNode; theme: Theme; right?: ReactNode }) {
+/** num không có = phần Learn: huy hiệu ngôi sao thay cho số */
+function SectionHeader({ num, title, sub, theme, right }: { num?: number; title: ReactNode; sub?: ReactNode; theme: Theme; right?: ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
       <div style={{
-        width: 30, height: 30, borderRadius: "50%", background: theme.ink, color: "#fff",
+        width: 30, height: 30, borderRadius: "50%", background: num === undefined ? theme.accent2 : theme.ink, color: "#fff",
         display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800,
-        fontFamily: theme.display, fontSize: 15, flexShrink: 0, marginTop: 1,
-      }}>{num}</div>
+        fontFamily: theme.display, fontSize: num === undefined ? 16 : 15, flexShrink: 0, marginTop: 1,
+        boxShadow: num === undefined ? `0 0 0 3px ${theme.pillBg}` : undefined,
+      }}>{num === undefined ? "★" : num}</div>
       <div style={{ flex: 1 }}>
         <div style={{ color: theme.ink, fontWeight: 800, fontFamily: theme.display, fontSize: theme.itemFont + 2 }}>{title}</div>
         {sub ? <div style={{ color: "#4a5b6a", fontSize: theme.baseFont - 1, marginTop: 1 }}>{sub}</div> : null}
       </div>
       {right}
-    </div>
-  );
-}
-
-function ToolBtn({ onClick, children, theme, disabled }: { onClick: () => void; children: ReactNode; theme: Theme; disabled?: boolean }) {
-  return (
-    <button onClick={onClick} disabled={disabled} className="ws-noprint" style={{
-      border: `1.5px solid ${theme.line}`, background: "#fff", color: theme.accent,
-      borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 700,
-      cursor: disabled ? "default" : "pointer", fontFamily: theme.body, opacity: disabled ? 0.5 : 1,
-      display: "inline-flex", alignItems: "center", gap: 5,
-    }}>{children}</button>
-  );
-}
-
-/* Ô nhập yêu cầu khi Gen lại: trống = gen mới hoàn toàn; có chữ = gen theo chỉ dẫn */
-function RegenBox({ theme, onRun, onClose, busy }: { theme: Theme; onRun: (instruction: string) => void; onClose: () => void; busy: boolean }) {
-  const [txt, setTxt] = useState("");
-  return (
-    <div className="ws-noprint" style={{
-      background: theme.softBg, border: `1.5px solid ${theme.line}`, borderRadius: 12,
-      padding: 10, marginBottom: 10,
-    }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: theme.accent, marginBottom: 6 }}>
-        Gen lại phần này — mô tả yêu cầu (để trống nếu muốn tạo mới hoàn toàn):
-      </div>
-      <textarea value={txt} onChange={(e) => setTxt(e.target.value)} autoFocus
-        placeholder="vd: giữ nguyên phần grammar, chỉ đổi 2 từ vựng sang chủ đề châu Á; hoặc: làm câu dễ hơn, thêm gợi ý trong ngoặc..."
-        style={{
-          width: "100%", minHeight: 54, border: `1.5px solid ${theme.line}`, borderRadius: 8,
-          padding: "6px 8px", fontSize: 13, fontFamily: theme.body, boxSizing: "border-box", resize: "vertical",
-        }} />
-      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-        <button onClick={() => onRun(txt)} disabled={busy} style={{
-          background: theme.accent, color: "#fff", border: "none", borderRadius: 999,
-          padding: "5px 16px", fontWeight: 700, cursor: busy ? "default" : "pointer", fontSize: 13,
-          opacity: busy ? 0.6 : 1, display: "inline-flex", alignItems: "center", gap: 6,
-        }}>{busy ? <Spinner color="#fff" /> : "🔄"} Gen lại</button>
-        <button onClick={onClose} disabled={busy} style={{
-          background: "#fff", color: "#7a8a99", border: `1.5px solid ${theme.line}`,
-          borderRadius: 999, padding: "5px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13,
-        }}>Huỷ</button>
-      </div>
     </div>
   );
 }
@@ -687,15 +650,15 @@ function LearnEditor({ learn, onSave, onCancel, theme, showImg }: { learn: Learn
             }}>Xoá</button>
           </div>
           {b.kind === "table" ? (
-            <textarea style={{ ...inp, minHeight: 60, resize: "vertical", fontFamily: "monospace", fontSize: 12.5 }}
+            <AutoTextarea style={{ ...inp, minHeight: 60, resize: "vertical", fontFamily: "monospace", fontSize: 12.5 }}
               value={tableToText(b)}
               onChange={(e) => { const t = textToTable(e.target.value) || { headers: [], rows: [] }; updBlock(bi, { headers: t.headers, rows: t.rows }); }}
               placeholder={"Base | Superlative\ngood / well | the best\nbad / badly | the worst"} />
           ) : (
             <>
-              <textarea style={{ ...inp, minHeight: 34, resize: "vertical" }} value={b.point || ""}
+              <AutoTextarea style={{ ...inp, minHeight: 34, resize: "vertical" }} value={b.point || ""}
                 onChange={(e) => updBlock(bi, { point: e.target.value })} placeholder="Nội dung quy tắc" />
-              <textarea style={{ ...inp, minHeight: 40, resize: "vertical" }} value={(b.examples || []).join("\n")}
+              <AutoTextarea style={{ ...inp, minHeight: 40, resize: "vertical" }} value={(b.examples || []).join("\n")}
                 onChange={(e) => updBlock(bi, { examples: e.target.value.split("\n") })} placeholder="Ví dụ minh hoạ (mỗi dòng 1 câu)" />
             </>
           )}
@@ -760,6 +723,12 @@ function ExerciseEditor({ ex, onSave, onCancel, theme }: { ex: Exercise; onSave:
   };
   const addItem = () =>
     setDraft((d) => ({ ...d, items: [...d.items, blankItem(d.type, d.items.length + 1)] }));
+  const moveItem = (i: number, dir: number) => setDraft((d) => ({ ...d, items: renumber(moveInArray(d.items, i, dir)) }));
+  const arrowBtn = (disabled: boolean): CSSProperties => ({
+    border: "none", background: "#fff", color: disabled ? "#ccc" : theme.accent, cursor: disabled ? "default" : "pointer", fontWeight: 800, fontSize: 14, padding: "0 4px",
+  });
+  const reorder = <ReorderBar ex={draft} theme={theme} onMode={(m) => setDraft((d) => applyReorder(d, m))} />;
+  const wordBoxEditor = <WordBoxEditor draft={draft} setDraft={setDraft} theme={theme} inp={inp} />;
 
   /* ----- Editor riêng cho BẢNG BIẾN ĐỔI ----- */
   if (draft.type === "transform_table") {
@@ -785,7 +754,8 @@ function ExerciseEditor({ ex, onSave, onCancel, theme }: { ex: Exercise; onSave:
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8, background: theme.softBg, borderRadius: 12, padding: 12 }}>
         <label style={{ fontSize: 12, fontWeight: 700, color: theme.accent }}>Instruction</label>
-        <input style={inp} value={draft.instruction || ""} onChange={(e) => setDraft({ ...draft, instruction: e.target.value })} />
+        <AutoTextarea style={inp} value={draft.instruction || ""} onChange={(e) => setDraft({ ...draft, instruction: e.target.value })} />
+        {wordBoxEditor}
 
         <label style={{ fontSize: 12, fontWeight: 700, color: theme.accent }}>Tiêu đề cột</label>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -819,7 +789,7 @@ function ExerciseEditor({ ex, onSave, onCancel, theme }: { ex: Exercise; onSave:
           <div key={ri} style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <span style={{ fontSize: 11, color: "#8ea3b5", width: 28 }}>e.g.</span>
             {cols.map((_, ci) => (
-              <input key={ci} style={cellInp} value={row[ci] || ""}
+              <AutoTextarea key={ci} style={cellInp} value={row[ci] || ""}
                 onChange={(e) => setExamples((draft.examples || []).map((r, j) => j === ri ? r.map((c, k) => k === ci ? e.target.value : c) : r))} />
             ))}
             <button onClick={() => setExamples((draft.examples || []).filter((_, j) => j !== ri))} style={{ border: "none", background: "#fff", color: "#c04040", cursor: "pointer", fontWeight: 800, padding: "0 6px" }}>✕</button>
@@ -835,12 +805,17 @@ function ExerciseEditor({ ex, onSave, onCancel, theme }: { ex: Exercise; onSave:
         <label style={{ fontSize: 12, fontWeight: 700, color: theme.accent, marginTop: 4 }}>
           Các dòng bài tập — gõ đầy đủ nội dung, rồi tích ô nào để TRỐNG cho học sinh viết
         </label>
+        {reorder}
         {draft.items.map((it, ri) => (
           <div key={ri} style={{ display: "flex", gap: 6, alignItems: "flex-start", borderTop: `1px dashed ${theme.line}`, paddingTop: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: theme.accent, width: 20, paddingTop: 6 }}>{ri + 1}</span>
+            <span style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 22, paddingTop: 4 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: theme.accent }}>{ri + 1}</span>
+              <button onClick={() => moveItem(ri, -1)} disabled={ri === 0} title="Lên" style={arrowBtn(ri === 0)}>↑</button>
+              <button onClick={() => moveItem(ri, 1)} disabled={ri === draft.items.length - 1} title="Xuống" style={arrowBtn(ri === draft.items.length - 1)}>↓</button>
+            </span>
             {cols.map((_, ci) => (
               <div key={ci} style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-                <input style={cellInp} value={(it.cells || [])[ci] || ""} onChange={(e) => updCell(ri, ci, e.target.value)} />
+                <AutoTextarea style={cellInp} value={(it.cells || [])[ci] || ""} onChange={(e) => updCell(ri, ci, e.target.value)} />
                 <label style={{ fontSize: 10.5, color: (it.blanks || [])[ci] ? theme.accent2 : "#8ea3b5", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                   <input type="checkbox" checked={!!(it.blanks || [])[ci]} onChange={() => toggleBlank(ri, ci)} style={{ margin: 0 }} />
                   để trống
@@ -877,23 +852,27 @@ function ExerciseEditor({ ex, onSave, onCancel, theme }: { ex: Exercise; onSave:
       <label style={{ fontSize: 12, fontWeight: 700, color: theme.accent }}>Tiêu đề bài</label>
       <input style={{ ...inp, fontWeight: 700 }} value={draft.title || ""} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Tên bài, vd: Match the Food" />
       <label style={{ fontSize: 12, fontWeight: 700, color: theme.accent }}>Instruction</label>
-      <textarea style={{ ...inp, minHeight: 34, resize: "vertical" }} value={draft.instruction} onChange={(e) => setDraft({ ...draft, instruction: e.target.value })} />
+      <AutoTextarea style={inp} value={draft.instruction} onChange={(e) => setDraft({ ...draft, instruction: e.target.value })} />
+      {wordBoxEditor}
       {draft.passage !== undefined || draft.type === "reading" || draft.type === "error_passage" ? (
         <>
           <label style={{ fontSize: 12, fontWeight: 700, color: theme.accent }}>Đoạn văn (passage)</label>
-          <textarea style={{ ...inp, minHeight: 90, resize: "vertical" }} value={draft.passage || ""}
+          <AutoTextarea style={{ ...inp, minHeight: 90, resize: "vertical" }} value={draft.passage || ""}
             onChange={(e) => setDraft({ ...draft, passage: e.target.value })} />
         </>
       ) : null}
+      {draft.items.length > 1 ? reorder : null}
       {draft.items.map((it, i) => (
         <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, borderTop: `1px dashed ${theme.line}`, paddingTop: 8 }}>
           <div style={{ display: "flex", alignItems: "center" }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: theme.accent, flex: 1 }}>Câu {i + 1}</div>
+            <button onClick={() => moveItem(i, -1)} disabled={i === 0} title="Lên" style={arrowBtn(i === 0)}>↑</button>
+            <button onClick={() => moveItem(i, 1)} disabled={i === draft.items.length - 1} title="Xuống" style={arrowBtn(i === draft.items.length - 1)}>↓</button>
             <button onClick={() => removeItem(i)} title="Xoá câu này" style={{
               border: "none", background: "#fff", color: "#c04040", cursor: "pointer", fontWeight: 800, fontSize: 12, padding: "0 6px",
             }}>✕ Xoá câu</button>
           </div>
-          <textarea style={{ ...inp, minHeight: 36, resize: "vertical" }} value={it.prompt}
+          <AutoTextarea style={{ ...inp, minHeight: 36, resize: "vertical" }} value={it.prompt}
             onChange={(e) => upd(i, "prompt", e.target.value)}
             placeholder="Prompt (dùng ___ cho chỗ trống, xuống dòng cho hội thoại)" />
           {["circle", "mcq", "tick", "reading"].includes(draft.type) ? (
@@ -909,7 +888,7 @@ function ExerciseEditor({ ex, onSave, onCancel, theme }: { ex: Exercise; onSave:
                       background: isAns ? theme.accent2 : "#fff",
                     }} />
                     <span style={{ fontWeight: 700, color: theme.accent, width: 16 }}>{String.fromCharCode(65 + oi)}.</span>
-                    <input style={{ ...inp, flex: 1 }} value={op}
+                    <AutoTextarea style={{ ...inp, flex: 1 }} value={op}
                       onChange={(e) => {
                         const opts = [...(it.options || [])];
                         const wasAns = isAns;
@@ -928,7 +907,7 @@ function ExerciseEditor({ ex, onSave, onCancel, theme }: { ex: Exercise; onSave:
               }}>+ Thêm lựa chọn</button>
             </div>
           ) : (
-            <textarea style={{ ...inp, minHeight: 32, resize: "vertical" }} value={it.answer} onChange={(e) => upd(i, "answer", e.target.value)} placeholder="Đáp án" />
+            <AutoTextarea style={{ ...inp, minHeight: 32, resize: "vertical" }} value={it.answer} onChange={(e) => upd(i, "answer", e.target.value)} placeholder="Đáp án" />
           )}
           {/* Điều khiển ô ảnh cho câu này */}
           <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2, flexWrap: "wrap" }}>
@@ -971,6 +950,7 @@ function ExerciseEditor({ ex, onSave, onCancel, theme }: { ex: Exercise; onSave:
 
 /* ================= APP CHÍNH ================= */
 const DEFAULT_CFG: Cfg = { type: "grammar", topic: "", level: "Pre A1", numEx: 3, notes: "", autoMode: true, plan: [] };
+const DEFAULT_GEN = { vocabAutoRetry: true, vocabRetryMax: 1 };
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
@@ -978,6 +958,43 @@ type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 const snapshotKey = (ws: Worksheet | null, cfg: Cfg, themeOverride: Level | null) => JSON.stringify([ws, cfg, themeOverride]);
 /** Không lưu khi AI đang viết dở (bài chưa có hoặc đang stream). */
 const isStable = (ws: Worksheet) => !ws.exercises.some((e) => !e || e._streaming);
+
+/** Một bước trong lịch sử hoàn tác (giữ cả bản ghi DB để hoàn tác "Nhập file" quay về đúng worksheet cũ) */
+type Snap = { ws: Worksheet; cfg: Cfg; themeOverride: Level | null; dbId: string | null };
+
+/** Chia tổng số câu đều cho n bài (mỗi bài 2–12 câu); bài đầu nhận phần dư: 16 câu / 3 bài = 6 + 5 + 5 */
+function distributeCount(total: number, n: number): number[] {
+  const t = Math.max(n * 2, Math.min(n * 12, Math.round(total)));
+  const base = Math.floor(t / n), extra = t % n;
+  return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));
+}
+/** Áp "Tổng số câu" vào kế hoạch — bảng biến đổi giữ số dòng riêng, không tính vào tổng */
+function applyTotal(plan: ExercisePlan[], totalQ?: number | null): ExercisePlan[] {
+  if (!totalQ) return plan;
+  const idx = plan.map((p, i) => (p.type === "transform_table" ? -1 : i)).filter((i) => i >= 0);
+  if (!idx.length) return plan;
+  const counts = distributeCount(totalQ, idx.length);
+  return plan.map((p, i) => (idx.includes(i) ? { ...p, count: counts[idx.indexOf(i)] } : p));
+}
+
+/** Chuẩn hoá bài AI trả về: gắn id, bỏ số thứ tự trong tiêu đề, hộp từ là mảng chuỗi (rỗng thì bỏ) */
+function normalizeExercise(ex: Exercise, planRow: Pick<ExercisePlan, "stage" | "type" | "title">, id: string): Exercise {
+  const out: Exercise = { ...planRow, ...ex, id, title: stripNum(ex.title || planRow.title), items: Array.isArray(ex.items) ? ex.items : [] };
+  const wb = Array.isArray(out.wordBox) ? out.wordBox.map((w) => String(w).trim()).filter(Boolean) : [];
+  if (wb.length) out.wordBox = wb; else delete out.wordBox;
+  return out;
+}
+
+/** Từ vượt band trong 1 bài */
+function aboveInExercise(lex: Lexicon, ex: Exercise, maxI: number): string[] {
+  return [...new Set(exerciseTexts(ex).flatMap((t) => lex.aboveBand(t.text, maxI).map((h) => h.word)))];
+}
+
+/** Giữ ảnh đã tải lên của từ vựng cũ khi từ mới trùng từ cũ */
+function keepVocabImages(old: VocabItem[] | undefined, next: VocabItem[] | undefined): VocabItem[] {
+  const byWord = new Map((old || []).map((v) => [String(v.word).toLowerCase(), v]));
+  return (next || []).map((v) => { const o = byWord.get(String(v.word).toLowerCase()); return o && o.img ? { ...v, img: o.img } : v; });
+}
 
 export interface WorksheetGeneratorProps {
   /** Worksheet đã lưu (mở từ DB) — có thì vào thẳng màn hình worksheet */
@@ -990,9 +1007,11 @@ export interface WorksheetGeneratorProps {
     visibility: "private" | "public";
     owner: { name: string; username: string; isMe: boolean };
   };
+  /** Cấu hình sinh nội dung của hệ thống (/admin/settings) */
+  gen?: Pick<GenSettings, "vocabAutoRetry" | "vocabRetryMax">;
 }
 
-export default function WorksheetGenerator({ initial, worksheetId, access }: WorksheetGeneratorProps) {
+export default function WorksheetGenerator({ initial, worksheetId, access, gen = DEFAULT_GEN }: WorksheetGeneratorProps) {
   const readOnly = !!access?.readOnly;
   const [visibility, setVisibility] = useState<"private" | "public">(access?.visibility ?? "private");
   const [visBusy, setVisBusy] = useState(false);
@@ -1016,6 +1035,11 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
   const [saveState, setSaveState] = useState<SaveState>(initial ? "saved" : "idle");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [saveErr, setSaveErr] = useState("");
+  const [lex, setLex] = useState<Lexicon | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [vocabWarn, setVocabWarn] = useState(false); // cảnh báo vàng sau lượt AI nếu còn từ vượt level
+  const [topicPanel, setTopicPanel] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   // Refs cho tự lưu: đọc giá trị mới nhất trong callback hẹn giờ mà không phụ thuộc closure cũ
   const dbIdRef = useRef<string | null>(worksheetId ?? null);
   const latest = useRef({ ws, cfg, themeOverride });
@@ -1024,8 +1048,77 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
   const savingRef = useRef(false);
   const saveAgainRef = useRef(false);
   const openInputRef = useRef<HTMLInputElement>(null);
+  // Phần nháp AI mới sinh, chờ gửi kèm lần lưu kế tiếp
+  const draftRef = useRef<AiDraftPatch | null>(null);
+  // Lịch sử hoàn tác — không giới hạn số bước, chỉ trong phiên làm việc
+  const past = useRef<Snap[]>([]);
+  const future = useRef<Snap[]>([]);
+  const [, setHistVer] = useState(0);
 
   const theme = THEMES[themeOverride || cfg.level];
+  const busyAi = loading || regenIdx !== null || regenLearn || syncing;
+
+  // Bảng từ (~150KB) nạp sau khi trang hiện, dùng cho nhãn level, quét và tự kiểm tra khi sinh
+  useEffect(() => {
+    let on = true;
+    void loadLexicon().then((l) => { if (on) setLex(l); }).catch(() => {});
+    return () => { on = false; };
+  }, []);
+
+  const vocabMaxI = maxVocabIdx(cfg);
+  const scan = useMemo(() => (lex && ws ? scanWorksheet(lex, ws, vocabMaxI) : null), [lex, ws, vocabMaxI]);
+  const unused = useMemo(() => (ws ? unusedVocab(ws) : []), [ws]);
+
+  /* ---------- Lịch sử hoàn tác ---------- */
+  const snapNow = (): Snap | null => {
+    const l = latest.current;
+    return l.ws ? { ws: l.ws, cfg: l.cfg, themeOverride: l.themeOverride, dbId: dbIdRef.current } : null;
+  };
+  const checkpoint = () => {
+    const s = snapNow();
+    if (!s) return;
+    past.current.push(s);
+    future.current = [];
+    setHistVer((v) => v + 1);
+  };
+  /** Thay đổi worksheet = 1 bước hoàn tác */
+  const commit = (next: Worksheet) => { checkpoint(); setWs(next); };
+  const restore = (s: Snap) => {
+    setWs(s.ws); setCfg(s.cfg); setThemeOverride(s.themeOverride);
+    if (s.dbId !== dbIdRef.current) {
+      dbIdRef.current = s.dbId; setDbId(s.dbId); lastSavedKey.current = "";
+      if (s.dbId) window.history.replaceState(null, "", "/worksheets/" + s.dbId);
+    }
+    setEditIdx(null); setEditLearn(false); setEditTitle(false); setRegenBox(null); setScreen("sheet");
+  };
+  const step = (from: Snap[], to: Snap[]) => {
+    if (busyAi) return;
+    const s = from.pop();
+    if (!s) return;
+    const cur = snapNow();
+    if (cur) to.push(cur);
+    restore(s);
+    setHistVer((v) => v + 1);
+  };
+  const undo = () => step(past.current, future.current);
+  const redo = () => step(future.current, past.current);
+  const keys = useRef({ undo, redo });
+  keys.current = { undo, redo };
+  useEffect(() => {
+    // Ctrl/⌘+Z, Ctrl/⌘+Shift+Z (hoặc Ctrl+Y). Đang gõ trong ô nhập thì để trình duyệt hoàn tác chữ như bình thường.
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); keys.current.undo(); }
+      else if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); keys.current.redo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const addDraft = (p: AiDraftPatch) => { draftRef.current = mergeDraftPatch(draftRef.current, p); };
 
   const itemSummary = (it: Item) => it.prompt || (it.cells || []).join(" → ");
 
@@ -1039,53 +1132,83 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
     return p ? `[${p.title}: ${p.items.slice(0, 3).map(itemSummary).join("; ")}]` : "";
   };
 
-  /** Ngữ cảnh gửi kèm mỗi lượt gọi AI (server ghi nhật ký + tính hạn mức theo runId). */
-  const aiCtx = (purpose: AiPurpose, runId: string): AiCallContext => ({
-    purpose, runId, worksheetId: dbId, meta: { level: cfg.level, type: cfg.type },
+  /** Ngữ cảnh gửi kèm mỗi lượt gọi AI (server ghi nhật ký + tính hạn mức theo runId; vocabMax để gắn danh sách từ). */
+  const aiCtx = (purpose: AiPurpose, runId: string, c: Cfg = cfg): AiCallContext => ({
+    purpose, runId, worksheetId: dbId, meta: { level: c.level, type: c.type, vocabMax: maxVocabIdx(c) },
   });
 
-  async function generateAll() {
-    if (!cfg.topic.trim()) { setError("Hãy nhập chủ điểm trước nhé."); return; }
+  async function generateAll(cfgIn?: Cfg) {
+    const c = cfgIn ?? cfg;
+    if (!c.topic.trim()) { setError("Hãy nhập chủ điểm trước nhé."); return; }
+    if (latest.current.ws) checkpoint(); // tạo lại cả worksheet cũng hoàn tác được
     setError(""); setLoading(true); setWs(null); setScreen("sheet");
+    setScanOpen(false); setVocabWarn(false); setTopicPanel(false); setEditIdx(null); setEditLearn(false); setRegenBox(null);
     const runId = crypto.randomUUID();
+    const patch: AiDraftPatch = { reset: true, exercises: {} };
     let planOk = false;
     try {
       setLoadMsg("Đang lập khung worksheet...");
-      const plan = await callClaude<StructurePlan>(buildStructurePrompt(cfg), aiCtx("structure", runId));
+      const raw = await callClaude<StructurePlan>(buildStructurePrompt(c), aiCtx("structure", runId, c));
       planOk = true;
-      const base: Worksheet = { title: plan.title, brief: plan.brief, learn: null, exercises: plan.plan.map(() => null) };
+      const plan = applyTotal(raw.plan.map((p) => ({ ...p, title: stripNum(p.title) })), c.totalQ);
+      const base: Worksheet = { title: raw.title, brief: raw.brief, learn: null, exercises: plan.map(() => null) };
+      patch.title = raw.title; patch.brief = raw.brief;
       setWs({ ...base });
 
       // Phần Learn gọi RIÊNG để output mỗi lần không vượt giới hạn độ dài
-      setLoadMsg("Đang soạn phần " + THEMES[cfg.level].learnTitle + "...");
+      setLoadMsg("Đang soạn phần " + THEMES[c.level].learnTitle + "...");
       try {
-        base.learn = await callClaude<Learn>(buildLearnPrompt(cfg, plan), aiCtx("learn", runId), (p) => {
+        base.learn = await callClaude<Learn>(buildLearnPrompt(c, raw), aiCtx("learn", runId, c), (p) => {
           const n = Array.isArray(p?.vocab) ? p.vocab.length : 0;
-          if (n) setLoadMsg(`Đang soạn phần ${THEMES[cfg.level].learnTitle}... (${n} từ)`);
+          if (n) setLoadMsg(`Đang soạn phần ${THEMES[c.level].learnTitle}... (${n} từ)`);
         });
+        patch.learn = base.learn;
       } catch (eL) {
         if (eL instanceof ApiError) throw eL;
         base.learn = null; // Learn lỗi thì vẫn tiếp tục các bài tập
       }
       setWs({ ...base });
 
+      // Tự kiểm tra level từ vựng sau mỗi bài (cấu hình ở /admin/settings)
+      const lexicon = gen.vocabAutoRetry ? await loadLexicon().catch(() => null) : null;
+      const maxI = maxVocabIdx(c);
       const exs = [...base.exercises];
       let anyFail = false;
-      for (let i = 0; i < plan.plan.length; i++) {
-        setLoadMsg(`Đang soạn bài ${i + 1}/${plan.plan.length} (${plan.plan[i].stage})...`);
+      for (let i = 0; i < plan.length; i++) {
+        const id = newExerciseId();
+        setLoadMsg(`Đang soạn bài ${i + 1}/${plan.length} (${plan[i].stage})...`);
+        const write = (avoid: string[]) => callClaude<Exercise>(
+          buildExercisePrompt(c, base, plan[i], summaries(exs, i), i, prevSum(exs, i), { avoid }),
+          aiCtx("exercise", runId, c),
+          // Hiện dần các câu đã viết xong trong lúc AI còn đang viết
+          (p) => {
+            const partial = partialExercise(p, { ...plan[i], id });
+            if (partial) { const cur = [...exs]; cur[i] = partial; setWs({ ...base, exercises: cur }); }
+          },
+        );
         try {
-          exs[i] = await callClaude<Exercise>(
-            buildExercisePrompt(cfg, base, plan.plan[i], summaries(exs, i), i, prevSum(exs, i)),
-            aiCtx("exercise", runId),
-            // Hiện dần các câu đã viết xong trong lúc AI còn đang viết
-            (p) => {
-              const partial = partialExercise(p, plan.plan[i]);
-              if (partial) { const cur = [...exs]; cur[i] = partial; setWs({ ...base, exercises: cur }); }
-            },
-          );
+          let ex = normalizeExercise(await write([]), plan[i], id);
+          if (lexicon) {
+            // Còn từ vượt band → viết lại kèm danh sách từ cần tránh; giữ bản ít từ vượt band hơn
+            let bad = aboveInExercise(lexicon, ex, maxI);
+            const avoid: string[] = [];
+            for (let t = 0; bad.length && t < gen.vocabRetryMax; t++) {
+              bad.forEach((w) => { if (!avoid.includes(w)) avoid.push(w); });
+              setLoadMsg(`Đang soạn lại bài ${i + 1} cho đúng level từ vựng (tránh: ${bad.slice(0, 4).join(", ")})...`);
+              try {
+                const retry = normalizeExercise(await write(avoid), plan[i], id);
+                const badRetry = aboveInExercise(lexicon, retry, maxI);
+                if (badRetry.length <= bad.length) { ex = retry; bad = badRetry; }
+              } catch {
+                break; // thử lại lỗi thì giữ bản đã có
+              }
+            }
+          }
+          exs[i] = ex;
+          patch.exercises![id] = { data: draftExercise(ex) };
         } catch (e2) {
           if (e2 instanceof ApiError) throw e2; // lỗi máy chủ -> dừng, báo đúng nguyên nhân
-          exs[i] = { ...plan.plan[i], instruction: "", items: [], _failed: true };
+          exs[i] = { ...plan[i], id, instruction: "", items: [], _failed: true };
           anyFail = true;
         }
         setWs({ ...base, exercises: [...exs] });
@@ -1102,39 +1225,127 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
           : "Chưa tạo được worksheet (nội dung trả về không hợp lệ). Thử giảm số bài hoặc bấm Thử lại.");
       }
     }
-    setLoading(false); setLoadMsg("");
+    if (planOk) addDraft(patch);
+    setLoading(false); setLoadMsg(""); setVocabWarn(true);
   }
 
-  async function regenExercise(i: number, instruction: string) {
+  /** Thay 1 bài trong worksheet hiện tại (đọc bản mới nhất — người dùng có thể đã sửa chỗ khác trong lúc chờ AI) */
+  const replaceExercise = (i: number, ex: Exercise) => {
+    const now = latest.current.ws;
+    if (!now) return;
+    const exs = [...now.exercises]; exs[i] = ex;
+    commit({ ...now, exercises: exs });
+  };
+
+  async function regenExercise(i: number, instruction: string, opts?: RegenOpts, avoid: string[] = []) {
+    const cur = latest.current.ws;
+    const ex = cur?.exercises[i];
+    if (!cur || !ex) return;
     setRegenIdx(i); setError(""); setRegenBox(null);
+    const id = ex.id || newExerciseId();
+    const ctx = aiCtx("regen_exercise", crypto.randomUUID());
+    const teacher = instruction.trim() ? "\nYÊU CẦU RIÊNG CỦA GIÁO VIÊN (bắt buộc tuân theo): " + instruction.trim() : "";
     try {
-      const ex = ws?.exercises[i];
-      if (!ws || !ex) throw new Error("Không tìm thấy bài " + (i + 1));
-      const plan = { stage: ex.stage, type: ex.type, title: ex.title, count: ex.items.length };
-      let extra = "\nLưu ý: tạo NỘI DUNG MỚI, khác hẳn các câu sau: " + ex.items.map(itemSummary).join("; ");
-      if (instruction && instruction.trim())
-        extra += "\nYÊU CẦU RIÊNG CỦA GIÁO VIÊN (bắt buộc tuân theo): " + instruction.trim();
-      const fresh = await callClaude<Exercise>(
-        buildExercisePrompt(cfg, ws, plan, summaries(ws.exercises, i), i, prevSum(ws.exercises, i)) + extra,
-        aiCtx("regen_exercise", crypto.randomUUID()),
-      );
-      const exs = [...ws.exercises]; exs[i] = fresh;
-      setWs({ ...ws, exercises: exs });
+      if (opts?.kind === "exercise" && opts.scope === "items") {
+        // Chỉ viết lại các câu không được tick "giữ"; tiêu đề, đề bài, đoạn văn, hộp từ giữ nguyên
+        const keepSet = new Set(opts.keep);
+        const freeIdx = ex.items.map((_, k) => k).filter((k) => !keepSet.has(k));
+        const planI = { stage: ex.stage, type: ex.type, title: ex.title, count: freeIdx.length };
+        const fixed = [`CHỈ SOẠN LẠI CÁC CÂU: trả về ĐÚNG ${freeIdx.length} item, GIỮ NGUYÊN title và instruction: "${ex.instruction || ""}".`];
+        if (ex.passage) fixed.push("ĐOẠN VĂN ĐÃ CHỐT, GIỮ NGUYÊN (câu hỏi phải bám đoạn này; KHÔNG trả lại trường passage): " + ex.passage);
+        if (ex.wordBox?.length) fixed.push("HỘP TỪ ĐÃ CHỐT, GIỮ NGUYÊN (không trả lại trường wordBox): " + ex.wordBox.join(", ") + ". Các câu mới phải dùng những từ trong hộp mà các câu được giữ chưa dùng.");
+        if (ex.type === "transform_table") fixed.push("Giữ NGUYÊN cột và dòng mẫu: columns=" + JSON.stringify(ex.columns || []) + ", examples=" + JSON.stringify(ex.examples || []) + ".");
+        const kept = ex.items.filter((_, k) => keepSet.has(k)).map(itemSummary);
+        if (kept.length) fixed.push("Các câu được GIỮ (không lặp ý với chúng): " + kept.join("; "));
+        fixed.push("Các câu cũ cần thay (viết nội dung KHÁC HẲN): " + freeIdx.map((k) => itemSummary(ex.items[k])).join("; "));
+        const fresh = await callClaude<Exercise>(
+          buildExercisePrompt(cfg, cur, planI, summaries(cur.exercises, i), i, prevSum(cur.exercises, i), { avoid }) + "\n" + fixed.join("\n") + teacher,
+          ctx,
+        );
+        const news = (fresh.items || []).slice(0, freeIdx.length);
+        if (!news.length) throw new Error("empty");
+        const nowEx = latest.current.ws?.exercises[i] || ex;
+        const items = [...nowEx.items];
+        freeIdx.forEach((pos, n) => { if (news[n] && pos < items.length) items[pos] = news[n]; });
+        const merged: Exercise = { ...nowEx, id, items: renumber(items) };
+        replaceExercise(i, merged);
+        addDraft({ exercises: { [id]: { data: draftExercise(merged), keptItems: [...keepSet] } } });
+      } else {
+        const stage = opts?.kind === "exercise" && opts.scope === "all" ? opts.stage : ex.stage;
+        const type = opts?.kind === "exercise" && opts.scope === "all" ? opts.type : ex.type;
+        const typeChanged = type !== ex.type;
+        const tableRows = ["Pre A1", "A1"].includes(cfg.level) ? 6 : ["A2", "B1"].includes(cfg.level) ? 8 : 10;
+        const count = type === "transform_table" ? tableRows : ex.type === "transform_table" ? 4 : ex.items.length || 4;
+        const plan = { stage, type, title: typeChanged ? "(đặt tên bài phù hợp dạng mới)" : ex.title, count };
+        let extra = "\nLưu ý: tạo NỘI DUNG MỚI, khác hẳn các câu sau: " + ex.items.map(itemSummary).join("; ");
+        if (typeChanged) extra += `\nĐÂY LÀ BÀI ĐỔI DẠNG sang "${type}" (${stage}): viết mới hoàn toàn theo đúng quy ước dạng này; đặt "title" (EN, ngắn, KHÔNG số thứ tự) phù hợp dạng mới.`;
+        const fresh = await callClaude<Exercise>(
+          buildExercisePrompt(cfg, cur, plan, summaries(cur.exercises, i), i, prevSum(cur.exercises, i), { avoid }) + extra + teacher,
+          ctx,
+        );
+        const next = normalizeExercise(fresh, { stage, type, title: typeChanged ? TYPE_META[type]?.label || type : ex.title }, id);
+        replaceExercise(i, next);
+        addDraft({ exercises: { [id]: { data: draftExercise(next) } } });
+      }
+      setVocabWarn(true);
     } catch (e) { setError(e instanceof ApiError ? e.message : "Regen bài " + (i + 1) + " lỗi, thử lại nhé."); }
     setRegenIdx(null);
   }
 
-  async function regenLearnSection(instruction: string) {
-    if (!ws) return;
+  async function regenLearnSection(instruction: string, scope: "all" | "grammar" | "vocab" = "all") {
+    const cur = latest.current.ws;
+    if (!cur) return;
     setRegenLearn(true); setError(""); setRegenBox(null);
     try {
-      const learn = await callClaude<Learn>(buildLearnPrompt(cfg, ws, instruction), aiCtx("regen_learn", crypto.randomUUID()));
-      setWs({ ...ws, learn });
+      const r = await callClaude<Partial<Learn>>(buildLearnPrompt(cfg, cur, instruction, scope, cur.learn), aiCtx("regen_learn", crypto.randomUUID()));
+      const now = latest.current.ws || cur;
+      const old = now.learn;
+      // "Chỉ ngữ pháp" giữ nguyên danh sách từ (kể cả ảnh đã tải lên); từ mới trùng từ cũ thì giữ ảnh
+      const learn: Learn = scope === "grammar"
+        ? { vocab: old?.vocab || [], grammar: r.grammar || old?.grammar || {} }
+        : scope === "vocab"
+          ? { vocab: keepVocabImages(old?.vocab, r.vocab), grammar: old?.grammar || {} }
+          : { vocab: keepVocabImages(old?.vocab, r.vocab), grammar: r.grammar || {} };
+      commit({ ...now, learn });
+      addDraft({ learn: scope === "grammar" ? { grammar: r.grammar } : scope === "vocab" ? { vocab: r.vocab } : { vocab: r.vocab, grammar: r.grammar } });
+      setVocabWarn(true);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Gen lại phần " + theme.learnTitle + " chưa được, thử lại nhé.");
     }
     setRegenLearn(false);
   }
+
+  /** Chọn lại từ vựng trọng tâm cho khớp với những gì bài tập thật sự dùng */
+  async function syncVocab() {
+    const cur = latest.current.ws;
+    if (!cur) return;
+    setSyncing(true); setError("");
+    try {
+      const r = await callClaude<{ vocab?: VocabItem[] }>(buildSyncVocabPrompt(cfg, cur), aiCtx("sync_vocab", crypto.randomUUID()));
+      if (!r.vocab?.length) throw new Error("empty");
+      const now = latest.current.ws || cur;
+      commit({ ...now, learn: { grammar: now.learn?.grammar || {}, vocab: keepVocabImages(now.learn?.vocab, r.vocab) } });
+      addDraft({ learn: { vocab: r.vocab } });
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Chưa đồng bộ được từ vựng, thử lại nhé.");
+    }
+    setSyncing(false);
+  }
+
+  const fetchIdeas = async (seen: string[], avoid: string[], runId: string): Promise<PromptIdea[]> =>
+    (await callClaude<{ ideas?: PromptIdea[] }>(buildPromptIdeasPrompt(cfg, seen, avoid), aiCtx("prompt_ideas", runId))).ideas || [];
+
+  /** Thêm/bỏ 1 thẻ gợi ý trong ô prompt */
+  const toggleIdea = (text: string) => setCfg((c) => {
+    if (c.notes.includes(text)) return { ...c, notes: c.notes.replace(text, "").replace(/\n{3,}/g, "\n\n").trim() };
+    return { ...c, notes: c.notes.trim() ? c.notes.trim() + "\n\n" + text : text };
+  });
+
+  const moveExercise = (i: number, dir: number) => {
+    if (!ws) return;
+    setEditIdx(null); setRegenBox(null);
+    commit({ ...ws, exercises: moveInArray(ws.exercises, i, dir) });
+  };
 
   /**
    * Lưu vào tài khoản (DB): lần đầu tạo bản ghi, các lần sau cập nhật. Chỉ một request tại một thời điểm —
@@ -1144,9 +1355,12 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
     const { ws: cur, cfg: curCfg, themeOverride: curTheme } = latest.current;
     if (!cur || !isStable(cur)) return;
     if (savingRef.current) { saveAgainRef.current = true; return; }
-    if (dbIdRef.current && snapshotKey(cur, curCfg, curTheme) === lastSavedKey.current) { setSaveState("saved"); return; }
+    if (dbIdRef.current && !draftRef.current && snapshotKey(cur, curCfg, curTheme) === lastSavedKey.current) { setSaveState("saved"); return; }
     savingRef.current = true;
     setSaveState("saving");
+    // Bản nháp AI đi kèm lần lưu này; lưu lỗi thì trả lại hàng chờ
+    const draft = draftRef.current;
+    draftRef.current = null;
     try {
       // Ảnh mới chèn (data URL) được upload riêng trước, worksheet chỉ lưu đường dẫn → tránh lỗi 413 (quá 4.5MB)
       const wsToSave = await uploadInlineImages(cur);
@@ -1155,7 +1369,7 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
       const res = await fetch(id ? `/api/worksheets/${id}` : "/api/worksheets", {
         method: id ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data }),
+        body: JSON.stringify({ data, ...(draft ? { aiDraft: draft } : {}) }),
       });
       const body: unknown = await res.json().catch(() => null);
       const bodyObj = body && typeof body === "object" ? (body as { id?: unknown; error?: { message?: unknown } }) : {};
@@ -1176,6 +1390,7 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
       if (wsToSave !== cur) setWs((w) => (w === cur ? wsToSave : w));
       setSaveState("saved"); setSavedAt(new Date()); setSaveErr("");
     } catch (e) {
+      draftRef.current = mergeDraftPatch(draft, draftRef.current);
       setSaveState("error");
       setSaveErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1187,7 +1402,7 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
   // Tự lưu: có thay đổi → chờ 2s không sửa thêm → lưu. Bỏ qua khi đang sinh worksheet.
   useEffect(() => {
     if (readOnly || !ws || loading || !isStable(ws)) return;
-    if (snapshotKey(ws, cfg, themeOverride) === lastSavedKey.current) return;
+    if (snapshotKey(ws, cfg, themeOverride) === lastSavedKey.current && !draftRef.current) return;
     setSaveState((s) => (s === "saving" ? s : "dirty"));
     const t = window.setTimeout(() => { void saveNow(); }, 2000);
     return () => window.clearTimeout(t);
@@ -1229,11 +1444,12 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
       try {
         const d: unknown = JSON.parse(r.result as string);
         if (!isSavedProject(d)) throw new Error("sai định dạng");
+        checkpoint(); // mở file cũng là 1 bước hoàn tác
         setCfg(d.cfg || cfg);
         setThemeOverride(d.themeOverride || null);
         setWs(d.ws);
-        // File nhập vào là worksheet mới → lần tự lưu tới sẽ tạo bản ghi mới
-        setDbId(null); dbIdRef.current = null; lastSavedKey.current = "";
+        // File nhập vào là worksheet mới → lần tự lưu tới sẽ tạo bản ghi mới (không phải bản nháp AI)
+        setDbId(null); dbIdRef.current = null; lastSavedKey.current = ""; draftRef.current = null;
         setError(""); setEditIdx(null); setEditLearn(false); setRegenBox(null);
         setScreen("sheet");
       } catch {
@@ -1274,12 +1490,7 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
             ))}
           </div>
 
-          <label style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>Chủ điểm *</label>
-          <input style={{ ...inp, margin: "5px 0 14px" }} value={cfg.topic}
-            placeholder={cfg.type === "grammar" ? "vd: Verb to be with nationalities" : "vd: Countries & nationalities"}
-            onChange={(e) => setCfg({ ...cfg, topic: e.target.value })} />
-
-          <label style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>CEFR level <span style={{ color: "#9aa9b8", fontWeight: 500 }}>(theme màu & bố cục đổi theo level)</span></label>
+          <label style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>CEFR level — ngữ pháp & bài tập <span style={{ color: "#9aa9b8", fontWeight: 500 }}>(theme màu & bố cục đổi theo level)</span></label>
           <div style={{ display: "flex", gap: 6, margin: "6px 0 14px", flexWrap: "wrap" }}>
             {LEVELS.map((lv) => (
               <button key={lv} onClick={() => { setCfg((c) => ({ ...c, level: lv, plan: syncPlan([], c.numEx, lv) })); setThemeOverride(null); }} style={{
@@ -1291,6 +1502,19 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
             ))}
           </div>
 
+          <label style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>Level từ vựng <span style={{ color: "#9aa9b8", fontWeight: 500 }}>(chọn được nhiều level)</span></label>
+          <VocabLevelPicker cfg={cfg} theme={t} onChange={(vocabLevels) => setCfg((c) => ({ ...c, vocabLevels }))} />
+          <div style={{ fontSize: 11.5, color: "#9aa9b8", margin: "0 0 14px" }}>
+            Mọi phần của worksheet chỉ dùng từ trong band <b>{effVocabLevels(cfg).join(" + ")}</b> (English Vocabulary Profile; Pre A1 theo wordlist Cambridge Starters).
+          </div>
+
+          <label style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>Chủ điểm *</label>
+          <input style={{ ...inp, margin: "5px 0 10px" }} value={cfg.topic}
+            placeholder={cfg.type === "grammar" ? "vd: Verb to be with nationalities" : "vd: Countries & nationalities"}
+            onChange={(e) => setCfg({ ...cfg, topic: e.target.value, topicMeta: null })} />
+          <TopicSuggest kind={cfg.type} levels={topicLevels(cfg)} topic={cfg.topic} theme={t}
+            onPick={(sub) => setCfg((c) => ({ ...c, topic: sub.en, topicMeta: subToMeta(sub) }))} />
+
           <label style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>Số bài tập</label>
           <div style={{ display: "flex", gap: 6, margin: "6px 0 14px" }}>
             {[2, 3, 4, 5].map((n) => (
@@ -1300,6 +1524,16 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
                 background: cfg.numEx === n ? t.accent : "#fff", color: cfg.numEx === n ? "#fff" : "#7a8a99",
               }}>{n}</button>
             ))}
+          </div>
+
+          <label style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>Tổng số câu <span style={{ color: "#9aa9b8", fontWeight: 500 }}>(tuỳ chọn)</span></label>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 14px" }}>
+            <input type="number" min={cfg.numEx * 2} max={cfg.numEx * 12} value={cfg.totalQ ?? ""} placeholder="Để trống = AI tự quyết"
+              onChange={(e) => { const v = parseInt(e.target.value, 10); setCfg((c) => ({ ...c, totalQ: Number.isFinite(v) && v > 0 ? v : null })); }}
+              style={{ ...inp, width: 190, padding: "7px 12px", fontSize: 14 }} />
+            <span style={{ fontSize: 12, color: "#7a8a99" }}>
+              {cfg.totalQ ? `Chia đều: ${distributeCount(cfg.totalQ, cfg.numEx).join(" + ")} (bảng biến đổi giữ số dòng riêng)` : "Khoảng 3–5 câu mỗi bài."}
+            </span>
           </div>
 
           {/* Chế độ tạo: tự động vs tuỳ chỉnh từng bài */}
@@ -1357,14 +1591,17 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
             </div>
           ) : null}
 
-          <label style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>Prompt mô tả thêm (tuỳ chọn)</label>
-          <textarea style={{ ...inp, margin: "5px 0 6px", minHeight: 70, resize: "vertical" }} value={cfg.notes}
+          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+            <label style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>Prompt mô tả thêm (tuỳ chọn)</label>
+            <PromptIdeas cfg={cfg} theme={t} lex={lex} fetchIdeas={fetchIdeas} onToggle={toggleIdea} />
+          </div>
+          <AutoTextarea minRows={3} style={{ ...inp, margin: "5px 0 6px" }} value={cfg.notes}
             placeholder="vd: bối cảnh lớp học quốc tế, có 1 bài matching với cờ các nước, tránh câu về gia đình..."
             onChange={(e) => setCfg({ ...cfg, notes: e.target.value })} />
 
           {error ? <div style={{ color: "#d64545", fontSize: 13, fontWeight: 700, margin: "6px 0" }}>{error}</div> : null}
 
-          <button onClick={generateAll} style={{
+          <button onClick={() => { void generateAll(); }} style={{
             width: "100%", marginTop: 12, background: t.accent2, color: "#fff", border: "none",
             borderRadius: 999, padding: "13px 0", fontWeight: 800, fontSize: 16, cursor: "pointer",
             fontFamily: t.display, boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
@@ -1383,7 +1620,7 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
   }
 
   /* ---------- WORKSHEET SCREEN ---------- */
-  let sectionNum = 0;
+  const vocabLevelName = LEVELS[vocabMaxI];
   return (
     <div style={{ minHeight: "calc(100vh - var(--app-top, 0px))", background: theme.pageBg, fontFamily: theme.body, padding: "18px 10px 60px", transition: "background 0.4s" }}>
       <style dangerouslySetInnerHTML={{ __html: `@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700;800&family=Nunito+Sans:wght@500;700;800&display=swap');
@@ -1413,7 +1650,15 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
         }}>
           {LEVELS.map((lv) => <option key={lv} value={lv}>{lv}</option>)}
         </select>
+        {!readOnly && <>
+          <ToolBtn theme={theme} onClick={undo} disabled={busyAi || !past.current.length} title="Hoàn tác (Ctrl/⌘+Z)">↶ Hoàn tác</ToolBtn>
+          <ToolBtn theme={theme} onClick={redo} disabled={busyAi || !future.current.length} title="Làm lại (Ctrl/⌘+Shift+Z)">↷ Làm lại</ToolBtn>
+        </>}
         <div style={{ flex: 1 }} />
+        {!readOnly && ws && <>
+          <ToolBtn theme={theme} onClick={() => { setScanOpen(!scanOpen); setTopicPanel(false); }} active={scanOpen} disabled={loading}>🔍 Quét từ vựng</ToolBtn>
+          <ToolBtn theme={theme} onClick={() => { setTopicPanel(!topicPanel); setScanOpen(false); }} active={topicPanel} disabled={busyAi}>🎯 Đổi chủ điểm</ToolBtn>
+        </>}
         <ToolBtn theme={theme} onClick={() => setShowAnswers(!showAnswers)}>{showAnswers ? "🙈 Ẩn đáp án" : "✅ Đáp án"}</ToolBtn>
         {/* Tự lưu: nút chỉ báo trạng thái; bấm để lưu ngay */}
         {!readOnly && <span title={saveState === "error" ? saveErr : saveState === "saved" ? "Đã tự lưu vào tài khoản" : undefined}>
@@ -1469,8 +1714,27 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
 
       {error ? (
         <div className="ws-noprint" style={{ maxWidth: 640, margin: "0 auto 12px", background: "#fff2f2", color: "#c04040", borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 700 }}>
-          {error} {!ws ? <button onClick={generateAll} style={{ marginLeft: 8, cursor: "pointer" }}>Thử lại</button> : null}
+          {error} {!ws ? <button onClick={() => { void generateAll(); }} style={{ marginLeft: 8, cursor: "pointer" }}>Thử lại</button> : null}
         </div>
+      ) : null}
+
+      {!readOnly && vocabWarn && !loading && !scanOpen && scan && scan.hits.length ? (
+        <div className="ws-noprint" style={{ maxWidth: 640, margin: "0 auto 12px", background: "#fff7e0", color: "#8a5a00", borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 700, border: "1.5px solid #f3d27a", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ flex: 1, minWidth: 220 }}>⚠ Có {scan.hits.length} từ vượt level từ vựng {vocabLevelName}: {scan.hits.slice(0, 6).map((h) => h.word).join(", ")}{scan.hits.length > 6 ? "…" : ""}</span>
+          <button onClick={() => setScanOpen(true)} style={{ border: "none", background: "#f3d27a", color: "#5a3b00", borderRadius: 999, padding: "4px 12px", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>🔍 Xem & sửa</button>
+          <button onClick={() => setVocabWarn(false)} style={{ border: "none", background: "transparent", color: "#8a5a00", cursor: "pointer", fontWeight: 800 }}>✕</button>
+        </div>
+      ) : null}
+
+      {!readOnly && scanOpen && ws ? (
+        <ScanPanel scan={scan} unused={unused} maxLevel={vocabLevelName} theme={theme} onClose={() => setScanOpen(false)}
+          regenIdx={regenIdx} syncing={syncing} onSyncVocab={() => { void syncVocab(); }}
+          onRegenEx={(i, words) => { void regenExercise(i, "", undefined, words); }} />
+      ) : null}
+
+      {!readOnly && topicPanel && ws ? (
+        <ChangeTopicPanel cfg={cfg} theme={theme} busy={busyAi} onClose={() => setTopicPanel(false)}
+          onRun={(topic, topicMeta) => { const next = { ...cfg, topic, topicMeta }; setCfg(next); void generateAll(next); }} />
       ) : null}
 
       {loading && !ws ? (
@@ -1506,7 +1770,7 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
                     border: `2px solid ${theme.accent2}`, outline: "none",
                   }} />
               ) : (
-                <span onClick={() => { if (!readOnly) setEditTitle(true); }} title={readOnly ? undefined : "Bấm để sửa tên worksheet"}
+                <span onClick={() => { if (!readOnly) { checkpoint(); setEditTitle(true); } }} title={readOnly ? undefined : "Bấm để sửa tên worksheet"}
                   style={{
                     background: "#fff", color: theme.ink, fontFamily: theme.display, fontWeight: 800,
                     fontSize: 17, borderRadius: 10, padding: "3px 12px", cursor: "text",
@@ -1522,7 +1786,7 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
           {/* Section 1: Learn / Language Focus / Language Note */}
           {ws.learn ? (
             <div className="ws-section" style={{ border: `2px solid ${theme.line}`, borderRadius: theme.radius, padding: theme.gap * 0.7, marginBottom: theme.gap * 0.8 }}>
-              <SectionHeader num={++sectionNum} title={theme.learnTitle} theme={theme}
+              <SectionHeader title={theme.learnTitle} theme={theme}
                 right={readOnly ? undefined :
                   <span style={{ display: "flex", gap: 6 }}>
                     <ToolBtn theme={theme} onClick={() => { setEditLearn(!editLearn); setRegenBox(null); }}>✏️ Sửa</ToolBtn>
@@ -1533,13 +1797,13 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
                 } />
 
               {regenBox === "learn" ? (
-                <RegenBox theme={theme} busy={regenLearn}
-                  onRun={(txt) => regenLearnSection(txt)} onClose={() => setRegenBox(null)} />
+                <RegenBox theme={theme} busy={regenLearn} level={cfg.level} learnTitle={theme.learnTitle}
+                  onRun={(txt, o) => { void regenLearnSection(txt, o.kind === "learn" ? o.scope : "all"); }} onClose={() => setRegenBox(null)} />
               ) : null}
 
               {editLearn ? (
                 <LearnEditor learn={ws.learn} theme={theme} showImg={theme.showImages}
-                  onSave={(d) => { setWs({ ...ws, learn: d }); setEditLearn(false); }}
+                  onSave={(d) => { commit({ ...ws, learn: d }); setEditLearn(false); }}
                   onCancel={() => setEditLearn(false)} />
               ) : (
                 <>
@@ -1554,6 +1818,7 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
                             <ImageSlot desc={v.imageDesc} src={v.img} size={92} />
                             <div style={{ fontWeight: 800, fontSize: theme.baseFont, marginTop: 4, fontFamily: theme.display, color: "#2c3e50" }}>
                               {v.word}{v.pos ? <span style={{ fontWeight: 500, fontStyle: "italic", color: "#8ea3b5", fontSize: theme.baseFont - 3 }}> ({v.pos})</span> : null}
+                              {!readOnly && <CefrTag word={v.word} lex={lex} maxI={vocabMaxI} />}
                             </div>
                           </div>
                         ))}
@@ -1571,6 +1836,7 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
                         {(ws.learn.vocab || []).map((v, i) => (
                           <span key={i} style={{ background: theme.pillBg, color: theme.pillText, borderRadius: 999, padding: "5px 14px", fontWeight: 700, fontSize: theme.baseFont }}>
                             {v.word}{v.pos ? <span style={{ fontWeight: 500, fontStyle: "italic", opacity: 0.7 }}> ({v.pos})</span> : null}
+                            {!readOnly && <CefrTag word={v.word} lex={lex} maxI={vocabMaxI} />}
                           </span>
                         ))}
                       </div>
@@ -1617,10 +1883,13 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
             <div key={i} className="ws-section" style={{ border: `2px solid ${theme.line}`, borderRadius: theme.radius, padding: theme.gap * 0.7, marginBottom: theme.gap * 0.8 }}>
               {ex ? (
                 <>
-                  <SectionHeader num={++sectionNum} title={ex.title} sub={ex.instruction} theme={theme}
+                  <SectionHeader num={i + 1} title={stripNum(ex.title)} sub={ex.instruction} theme={theme}
                     right={ex._streaming || readOnly ? undefined :
-                      <span style={{ display: "flex", gap: 6 }}>
+                      <span style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
                         <span className="ws-noprint" style={{ fontSize: 10.5, fontWeight: 800, color: "#9aa9b8", alignSelf: "center", textTransform: "uppercase" }}>{ex.stage}</span>
+                        <ToolBtn theme={theme} onClick={() => moveExercise(i, -1)} disabled={busyAi || i === 0} title="Chuyển bài lên">↑</ToolBtn>
+                        <ToolBtn theme={theme} onClick={() => moveExercise(i, 1)} disabled={busyAi || i === ws.exercises.length - 1} title="Chuyển bài xuống">↓</ToolBtn>
+                        {!ex._failed && ex.items.length > 1 ? <ReorderMenu ex={ex} theme={theme} onMode={(m) => replaceExercise(i, applyReorder(ex, m))} /> : null}
                         <ToolBtn theme={theme} onClick={() => { setEditIdx(editIdx === i ? null : i); setRegenBox(null); }}>✏️ Sửa</ToolBtn>
                         <ToolBtn theme={theme} onClick={() => { setRegenBox(regenBox === i ? null : i); setEditIdx(null); }} disabled={regenIdx === i}>
                           {regenIdx === i ? <Spinner color={theme.accent} /> : "🔄"} Gen lại
@@ -1628,12 +1897,12 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
                       </span>
                     } />
                   {regenBox === i ? (
-                    <RegenBox theme={theme} busy={regenIdx === i}
-                      onRun={(txt) => regenExercise(i, txt)} onClose={() => setRegenBox(null)} />
+                    <RegenBox theme={theme} busy={regenIdx === i} ex={ex} level={cfg.level}
+                      onRun={(txt, o) => { void regenExercise(i, txt, o); }} onClose={() => setRegenBox(null)} />
                   ) : null}
                   {editIdx === i ? (
                     <ExerciseEditor ex={ex} theme={theme}
-                      onSave={(d) => { const exs = [...ws.exercises]; exs[i] = d; setWs({ ...ws, exercises: exs }); setEditIdx(null); }}
+                      onSave={(d) => { replaceExercise(i, d); setEditIdx(null); }}
                       onCancel={() => setEditIdx(null)} />
                   ) : ex._failed ? (
                     <div style={{ textAlign: "center", color: "#c04040", fontSize: 13, fontWeight: 700, padding: "10px 0" }}>
@@ -1641,6 +1910,7 @@ export default function WorksheetGenerator({ initial, worksheetId, access }: Wor
                     </div>
                   ) : (
                     <>
+                      <WordBox words={ex.wordBox} theme={theme} />
                       <ExerciseItems ex={ex} theme={theme} showAnswers={showAnswers} />
                       {ex._streaming && (
                         <div className="ws-noprint" style={{ textAlign: "center", color: theme.accent, fontWeight: 700, padding: "8px 0 2px", fontSize: 13 }}>

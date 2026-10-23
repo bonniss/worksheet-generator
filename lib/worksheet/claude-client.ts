@@ -56,7 +56,8 @@ export type AiCallContext = {
   purpose: AiPurpose;
   runId: string;
   worksheetId?: string | null;
-  meta?: { level?: string; type?: string };
+  /** vocabMax = chỉ số level từ vựng cao nhất (server gắn danh sách từ được phép khi band thấp) */
+  meta?: { level?: string; type?: string; vocabMax?: number };
 };
 
 type ErrorBody = { type?: string; error?: { type?: string; message?: string } };

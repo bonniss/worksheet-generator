@@ -7,9 +7,14 @@ import { decryptSecret, encryptSecret, maskSecret } from "./crypto";
 export const SETTING_KEYS = {
   apiKey: "ai.anthropic_api_key", // đã mã hoá
   model: "ai.model",
+  lightModel: "ai.model.light", // model cho tác vụ phụ (gợi ý prompt, đồng bộ từ vựng); trống = như model chính
   runsPerDay: "ai.limit.runs_per_day",
   regensPerDay: "ai.limit.regens_per_day",
   systemUsdPerDay: "ai.limit.system_usd_per_day",
+  helpersPerDay: "ai.limit.helpers_per_day",
+  vocabAutoRetry: "gen.vocab_auto_retry",
+  vocabRetryMax: "gen.vocab_retry_max",
+  sendWordlist: "gen.send_wordlist",
 } as const;
 type SettingKey = (typeof SETTING_KEYS)[keyof typeof SETTING_KEYS];
 
@@ -25,6 +30,8 @@ export type AiConfig = {
   apiKeyBroken: boolean;
   model: string;
   modelSource: Source;
+  /** Model cho tác vụ phụ; null = dùng model chính */
+  lightModel: string | null;
 };
 
 async function readRows(keys: SettingKey[]) {
@@ -50,17 +57,18 @@ function resolve(rows: Rows): AiConfig {
     apiKeyBroken: !!storedKey && !dbKey,
     model: dbModel || envModel || DEFAULT_MODEL,
     modelSource: dbModel ? "db" : envModel ? "env" : "default",
+    lightModel: rows.get(SETTING_KEYS.lightModel)?.value || null,
   };
 }
 
 /** Cấu hình AI hiệu lực: ưu tiên DB, rồi tới biến môi trường. */
 export async function getAiConfig(): Promise<AiConfig> {
-  return resolve(await readRows([SETTING_KEYS.apiKey, SETTING_KEYS.model]));
+  return resolve(await readRows([SETTING_KEYS.apiKey, SETTING_KEYS.model, SETTING_KEYS.lightModel]));
 }
 
 /** Thông tin cho trang quản trị — key thật chỉ dùng phía server, trang chỉ nhận bản che. */
 export async function getAiSettingsView() {
-  const rows = await readRows([SETTING_KEYS.apiKey, SETTING_KEYS.model]);
+  const rows = await readRows([SETTING_KEYS.apiKey, SETTING_KEYS.model, SETTING_KEYS.lightModel]);
   const cfg = resolve(rows);
   const meta = (k: SettingKey) => {
     const r = rows.get(k);
@@ -77,6 +85,7 @@ export async function getAiSettingsView() {
       model: cfg.model,
       modelSource: cfg.modelSource,
       modelMeta: meta(SETTING_KEYS.model),
+      lightModel: cfg.lightModel,
       envModel: process.env.ANTHROPIC_MODEL || null,
     },
   };
@@ -96,13 +105,15 @@ export async function deleteSetting(key: SettingKey) {
 
 /* ===== Hạn mức AI ===== */
 
-export const DEFAULT_LIMITS = { runsPerDay: 20, regensPerDay: 60 } as const;
+export const DEFAULT_LIMITS = { runsPerDay: 20, regensPerDay: 60, helpersPerDay: 60 } as const;
 
 export type AiLimits = {
   /** Lượt tạo worksheet / người / ngày */
   runsPerDay: number;
   /** Lượt gen lại (1 bài hoặc phần Learn) / người / ngày */
   regensPerDay: number;
+  /** Lượt tác vụ phụ (gợi ý prompt, đồng bộ từ vựng) / người / ngày */
+  helpersPerDay: number;
   /** Trần chi phí toàn hệ thống / ngày (USD); null = không giới hạn */
   systemUsdPerDay: number | null;
 };
@@ -113,11 +124,36 @@ const toInt = (v: string | undefined, fallback: number) => {
 };
 
 export async function getAiLimits(): Promise<AiLimits> {
-  const rows = await readRows([SETTING_KEYS.runsPerDay, SETTING_KEYS.regensPerDay, SETTING_KEYS.systemUsdPerDay]);
+  const rows = await readRows([SETTING_KEYS.runsPerDay, SETTING_KEYS.regensPerDay, SETTING_KEYS.helpersPerDay, SETTING_KEYS.systemUsdPerDay]);
   const usd = Number(rows.get(SETTING_KEYS.systemUsdPerDay)?.value);
   return {
     runsPerDay: toInt(rows.get(SETTING_KEYS.runsPerDay)?.value, DEFAULT_LIMITS.runsPerDay),
     regensPerDay: toInt(rows.get(SETTING_KEYS.regensPerDay)?.value, DEFAULT_LIMITS.regensPerDay),
+    helpersPerDay: toInt(rows.get(SETTING_KEYS.helpersPerDay)?.value, DEFAULT_LIMITS.helpersPerDay),
     systemUsdPerDay: Number.isFinite(usd) && usd > 0 ? usd : null,
+  };
+}
+
+/* ===== Sinh nội dung: kiểm tra level từ vựng ===== */
+
+export type GenSettings = {
+  /** Sinh xong mỗi bài, có từ vượt band thì tự gen lại bài đó */
+  vocabAutoRetry: boolean;
+  /** Số lần tự gen lại tối đa mỗi bài */
+  vocabRetryMax: number;
+  /** Gửi danh sách từ được phép cho AI khi band từ vựng là Pre A1/A1 */
+  sendWordlist: boolean;
+};
+
+export const DEFAULT_GEN: GenSettings = { vocabAutoRetry: true, vocabRetryMax: 1, sendWordlist: true };
+
+const toBool = (v: string | undefined, fallback: boolean) => (v === "1" ? true : v === "0" ? false : fallback);
+
+export async function getGenSettings(): Promise<GenSettings> {
+  const rows = await readRows([SETTING_KEYS.vocabAutoRetry, SETTING_KEYS.vocabRetryMax, SETTING_KEYS.sendWordlist]);
+  return {
+    vocabAutoRetry: toBool(rows.get(SETTING_KEYS.vocabAutoRetry)?.value, DEFAULT_GEN.vocabAutoRetry),
+    vocabRetryMax: Math.min(3, toInt(rows.get(SETTING_KEYS.vocabRetryMax)?.value, DEFAULT_GEN.vocabRetryMax)),
+    sendWordlist: toBool(rows.get(SETTING_KEYS.sendWordlist)?.value, DEFAULT_GEN.sendWordlist),
   };
 }
